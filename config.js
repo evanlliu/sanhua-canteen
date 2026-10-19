@@ -10,7 +10,7 @@ window.APP_CONFIG = {
     repo: 'sanhua-canteen',
     branch: 'data',
     path: 'data.json',
-
+adminPassword: '1123',
     // 本地打开 token-tool.html，填写 PAT 并生成，复制结果粘贴到以下两个字段。
     tokenCiphertext: 'BzSHFZhrZn5cp9O2CjHBxlwNmTfkWmccRBzWYYLkSKMomd0kYj+CSy5KOw0MjFY7yAu36CgeER+yVaRz1fDigWpqnrqB+Fqx63KmUQt/7J3Z5JmhbNI2SVanl3srKNa+1Mi1st8kWCJPaffFYwmLvb46dcmjqN6MRQ==',
 keyMaterial: '9aaf8d013a8cca93c7836b8e5eedd675cb2eb492f5045115',

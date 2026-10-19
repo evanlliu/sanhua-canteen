@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T23:10:04.399Z",
+  "updatedAt": "2026-10-19T23:10:16.618Z",
   "settings": {
     "timeZone": "America/Monterrey",
     "maxAdvanceDays": 0,
@@ -33,16 +33,6 @@
         "nameEs": "Cena",
         "start": "17:30",
         "end": "20:00",
-        "enabled": true
-      },
-      {
-        "id": "meal_19am9zh",
-        "label": "新餐次",
-        "nameZh": "新餐次",
-        "nameEn": "New meal",
-        "nameEs": "Nueva comida",
-        "start": "20:00",
-        "end": "21:00",
         "enabled": true
       }
     ]

@@ -1,13 +1,16 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T22:19:12.903Z",
+  "updatedAt": "2026-10-19T23:10:04.399Z",
   "settings": {
     "timeZone": "America/Monterrey",
-    "maxAdvanceDays": 7,
+    "maxAdvanceDays": 0,
     "meals": [
       {
         "id": "breakfast",
         "label": "早餐",
+        "nameZh": "早餐",
+        "nameEn": "Breakfast",
+        "nameEs": "Desayuno",
         "start": "07:00",
         "end": "09:00",
         "enabled": false
@@ -15,6 +18,9 @@
       {
         "id": "lunch",
         "label": "午餐",
+        "nameZh": "午餐",
+        "nameEn": "Lunch",
+        "nameEs": "Almuerzo",
         "start": "11:30",
         "end": "14:00",
         "enabled": true
@@ -22,8 +28,21 @@
       {
         "id": "dinner",
         "label": "晚餐",
+        "nameZh": "晚餐",
+        "nameEn": "Dinner",
+        "nameEs": "Cena",
         "start": "17:30",
         "end": "20:00",
+        "enabled": true
+      },
+      {
+        "id": "meal_19am9zh",
+        "label": "新餐次",
+        "nameZh": "新餐次",
+        "nameEn": "New meal",
+        "nameEs": "Nueva comida",
+        "start": "20:00",
+        "end": "21:00",
         "enabled": true
       }
     ]

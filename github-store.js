@@ -5,7 +5,7 @@
  * Use disposable test credentials and fictitious employee data ONLY.
  */
 import { decryptGitHubToken } from './token-obfuscation.js';
-const MEAL_IDS = ['breakfast', 'lunch', 'dinner'];
+import { normalMeal, mealName } from './meal-schema.js';
 const defaultMeals = [
   { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
   { id: 'lunch', label: '午餐', start: '11:30', end: '14:00', enabled: true },
@@ -23,17 +23,13 @@ function config() {
   return cfg;
 }
 let tokenCacheKey = '', tokenCachePromise = null;
-async function tokenFor(path, method, adminKey) {
+async function tokenFor(path, method) {
   const cfg = config();
   const isAdmin = path.startsWith('/api/admin/');
-  if (isAdmin) {
-    // 后台保持独立登录：管理员自己输入 PAT，仅保存在当前页面内存中。
-    const token = String(adminKey || '').trim();
-    if (!token || /^(YOUR_|REPLACE_|PASTE_)/i.test(token)) fail('请输入管理员 GitHub Token', 401);
-    return token;
-  }
-  // 公开仓库的匿名读取无须解密或发送 PAT。
-  if (method === 'GET') return '';
+  // 后台的密码只用于前端界面登录。GitHub API 写入 Token 仍从
+  // config.js 的混淆配置读取，不要求管理员再手动输入 PAT。
+  // GitHub Pages 无服务端认证，这不是实质性的访问控制。
+  if (!isAdmin && method === 'GET') return '';
   const ciphertext = String(cfg.tokenCiphertext || '').trim();
   const material = String(cfg.keyMaterial || '').trim();
   if (!ciphertext || !material) fail('尚未配置加密的 GitHub 写入 Token，请使用 token-tool.html 生成后填写 config.js，或使用 ?demo=1 演示。');
@@ -94,7 +90,7 @@ async function read(token) {
   try { data = JSON.parse(b64ToText(result.content)); }
   catch { fail('GitHub data.json 内容不是有效 JSON，请检查文件'); }
   if (!data || typeof data !== 'object' || Array.isArray(data)) fail('data.json 的根节点必须为对象');
-  data.settings = { ...defaultSettings, ...data.settings, meals: Array.isArray(data.settings?.meals) ? data.settings.meals : defaultMeals };
+  data.settings = { ...defaultSettings, ...data.settings, maxAdvanceDays: 0, meals: (Array.isArray(data.settings?.meals) ? data.settings.meals : defaultMeals).map(normalMeal) };
   data.employees = Array.isArray(data.employees) ? data.employees : [];
   data.reservations = Array.isArray(data.reservations) ? data.reservations : [];
   return { data, sha: result.sha };
@@ -142,19 +138,23 @@ function cleanSettings(obj) {
   const timeZone = String(obj.timeZone || '').trim();
   try { new Intl.DateTimeFormat('en-US', { timeZone }).format(); }
   catch { fail('请输入有效时区，例如 America/Monterrey'); }
-  const maxAdvanceDays = Number(obj.maxAdvanceDays);
-  if (!Number.isInteger(maxAdvanceDays) || maxAdvanceDays < 0 || maxAdvanceDays > 60) fail('可提前预约天数必须为 0～60');
-  if (!Array.isArray(obj.meals) || obj.meals.length !== 3) fail('必须有早餐、午餐、晚餐三项配置');
-  const meals = MEAL_IDS.map(id => {
-    const matches = obj.meals.filter(m => m?.id === id);
-    if (matches.length !== 1) fail('餐次缺失或重复：' + id);
-    const m = matches[0];
+  if (!Array.isArray(obj.meals) || obj.meals.length < 1 || obj.meals.length > 12) fail('请配置 1～12 个餐次');
+  const ids = new Set();
+  const meals = obj.meals.map((m, i) => {
+    const id = String(m?.id || '').trim();
+    if (!/^[a-z][a-z0-9_-]{0,39}$/.test(id) || ids.has(id)) fail(`第 ${i + 1} 个餐次 ID 无效或重复`);
+    ids.add(id);
+    const nameZh = String(m?.nameZh || m?.label || '').trim();
+    const nameEn = String(m?.nameEn || nameZh).trim();
+    const nameEs = String(m?.nameEs || nameZh).trim();
+    if (!nameZh || [nameZh,nameEn,nameEs].some(n => n.length > 40)) fail(`第 ${i + 1} 个餐次名称不能为空或超过 40 字`);
+    const start = String(m?.start || ''), end = String(m?.end || '');
     const validTime = x => /^([01]\d|2[0-3]):[0-5]\d$/.test(x);
-    if (!validTime(m.start) || !validTime(m.end) || m.start >= m.end) fail('餐次时间无效：' + id);
-    if (typeof m.enabled !== 'boolean') fail('餐次启用状态无效');
-    return { id, label: ({ breakfast: '早餐', lunch: '午餐', dinner: '晚餐' })[id], start: m.start, end: m.end, enabled: m.enabled };
+    if (!validTime(start) || !validTime(end) || start >= end) fail(`餐次「${nameZh}」的结束时间必须晚于开始时间`);
+    if (typeof m.enabled !== 'boolean') fail(`餐次「${nameZh}」的启用状态无效`);
+    return { id, label: nameZh, nameZh, nameEn, nameEs, start, end, enabled: m.enabled };
   });
-  return { timeZone, maxAdvanceDays, meals };
+  return { timeZone, maxAdvanceDays: 0, meals };
 }
 function cleanEmployees(rows) {
   if (!Array.isArray(rows) || rows.length < 1 || rows.length > 15000) fail('花名册必须有 1～15000 位员工');
@@ -173,7 +173,7 @@ function newCode() { return 'C' + Array.from(crypto.getRandomValues(new Uint8Arr
 const byDate = rows => [...rows].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)));
 export async function githubApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   const url = new URL(path, 'https://canteen.invalid');
-  const p = url.pathname, token = await tokenFor(p, method, adminKey);
+  const p = url.pathname, token = await tokenFor(p, method);
   if (p === '/api/config' && method === 'GET') {
     const { data } = await read(token);
     return { settings: data.settings, ...clock(data.settings.timeZone) };
@@ -193,20 +193,20 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
   if (p === '/api/reservations' && method === 'POST') {
     const employeeId = String(body?.employeeId || '').trim();
     const date = String(body?.date || ''), mealId = String(body?.mealId || '');
-    if (!/^\d{1,24}$/.test(employeeId) || !validDate(date) || !MEAL_IDS.includes(mealId)) fail('员工、用餐日期或餐次无效');
+    if (!/^\d{1,24}$/.test(employeeId) || !validDate(date) || !/^[a-z][a-z0-9_-]{0,39}$/.test(mealId)) fail('员工、用餐日期或餐次无效');
     return mutate(token, `reserve ${mealId} ${date}`, data => {
       const e = data.employees.find(e => String(e.employeeId) === employeeId);
       if (!e) fail('工号不在花名册中');
       const { today, nowTime } = clock(data.settings.timeZone);
-      const distance = daysBetween(date, today);
-      if (distance < 0 || distance > data.settings.maxAdvanceDays) fail('不在允许预约的日期范围内');
+      if (date !== today) fail('仅允许预约当天用餐，请刷新页面后重试');
       const meal = data.settings.meals.find(m => m.id === mealId);
       if (!meal?.enabled) fail('此餐次暂未开放预约');
-      if (distance === 0 && nowTime >= meal.end) fail('今天该餐次已结束');
+      if (nowTime >= meal.end) fail('今天该餐次已结束');
       if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealId === mealId)) fail('此员工当天该餐次已预约，不能重复预约', 409);
+      if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealStart < meal.end && meal.start < r.mealEnd)) fail('该员工在重叠的用餐时段已预约，不能重复预约', 409);
       let id = newCode(); while (data.reservations.some(r => r.id === id)) id = newCode();
       const reservation = { id, employeeId, employeeName: e.name, mealId, date,
-        mealStart: meal.start, mealEnd: meal.end, createdAt: new Date().toISOString() };
+        mealStart: meal.start, mealEnd: meal.end, mealNameZh: mealName(meal, 'zh'), mealNameEn: mealName(meal, 'en'), mealNameEs: mealName(meal, 'es'), createdAt: new Date().toISOString() };
       data.reservations.push(reservation);
       return { reservation };
     });

@@ -1,5 +1,6 @@
 import { api, isDemo, html, mealTitle, formatTime } from './client-api.js';
 import { readXlsxRows } from './xlsx-reader.js';
+import { normalMeal, mealName, mealIcon, reservationMeal } from './meal-schema.js';
 const $ = id => document.getElementById(id);
 let adminKey = '', db = null, rosterFileRows = null, busy = false;
 let filtered = [];
@@ -14,12 +15,23 @@ function onError(error, target = 'adminAlert') {
 async function login(event) {
   event?.preventDefault();
   const password = $('adminPassword').value;
-  if (!password) return message('loginStatus', '请输入有 sanhua-canteen 仓库权限的 GitHub Token', true);
-  adminKey = password;
-  $('loginBtn').disabled = true; message('loginStatus', '正在验证身份…');
-  try { await refresh(); $('adminPassword').value = ''; $('loginArea').classList.add('hidden'); $('dashboardArea').classList.remove('hidden'); $('logoutBtn').classList.remove('hidden'); message('loginStatus'); }
-  catch (error) { adminKey = ''; message('loginStatus', error.message || '登录失败', true); }
-  finally { $('loginBtn').disabled = false; }
+  const expected = String(window.APP_CONFIG?.github?.adminPassword ?? '').trim();
+  if (!expected) return message('loginStatus', '请先在 config.js 设置 adminPassword', true);
+  if (password !== expected) return message('loginStatus', '管理员密码错误，请重试', true);
+  // 仅记录演示模式需要的本地 API 标记；不再要求管理员输入 GitHub PAT。
+  adminKey = isDemo ? 'demo' : '';
+  $('loginBtn').disabled = true; message('loginStatus', '正在连接预约数据…');
+  try {
+    await refresh();
+    $('adminPassword').value = '';
+    $('loginArea').classList.add('hidden');
+    $('dashboardArea').classList.remove('hidden');
+    $('logoutBtn').classList.remove('hidden');
+    message('loginStatus');
+  } catch (error) {
+    adminKey = '';
+    message('loginStatus', error.message || '登录失败', true);
+  } finally { $('loginBtn').disabled = false; }
 }
 function logout() { adminKey = ''; db = null; $('dashboardArea').classList.add('hidden'); $('loginArea').classList.remove('hidden'); $('logoutBtn').classList.add('hidden'); $('adminPassword').value = ''; $('adminPassword').focus(); }
 async function refresh() {
@@ -35,10 +47,20 @@ function renderAll() {
   if (!db) return;
   $('statEmployee').textContent = db.employees.length;
   $('statTotal').textContent = db.reservations.length;
-  $('statLunch').textContent = db.reservations.filter(x => x.date === db.today && x.mealId === 'lunch').length;
-  $('statDinner').textContent = db.reservations.filter(x => x.date === db.today && x.mealId === 'dinner').length;
+  $('statToday').textContent = db.reservations.filter(x => x.date === db.today).length;
+  $('statEnabled').textContent = db.settings.meals.filter(x => x.enabled).length;
   $('todayLabel').textContent = `用餐日期：${db.today}`;
-  renderBookings(); renderRoster(); renderSettings();
+  renderMealFilters(); renderBookings(); renderRoster(); renderSettings();
+}
+function displayMeal(row) { return reservationMeal(row, db?.settings?.meals || [], 'zh'); }
+function renderMealFilters() {
+  const select = $('fMeal'), previous = select.value;
+  const pairs = new Map(db.settings.meals.map(m => [m.id, mealName(m, 'zh')]));
+  for (const r of db.reservations) if (!pairs.has(r.mealId)) pairs.set(r.mealId, displayMeal(r) + '（历史）');
+  select.replaceChildren();
+  const all = document.createElement('option'); all.value=''; all.textContent='全部餐次'; select.append(all);
+  for (const [id,name] of pairs) { const el = document.createElement('option'); el.value=id; el.textContent=name; select.append(el); }
+  select.value = pairs.has(previous) ? previous : '';
 }
 function filteredRows() {
   const word = $('fKeyword').value.trim().toLowerCase(), id = $('fEmployeeId').value.trim(), date = $('fDate').value, meal = $('fMeal').value;
@@ -61,20 +83,20 @@ function renderBookings() {
   }
   for (const row of filtered) {
     const tr = document.createElement('tr');
-    for (const [val, klass] of [[row.id, 'id-cell'], [row.employeeId, ''], [row.employeeName, ''], [mealTitle(row.mealId), ''], [row.date, ''], [`${row.mealStart} – ${row.mealEnd}`, ''], [formatTime(row.createdAt), '']]) {
+    for (const [val, klass] of [[row.id, 'id-cell'], [row.employeeId, ''], [row.employeeName, ''], [displayMeal(row), ''], [row.date, ''], [`${row.mealStart} – ${row.mealEnd}`, ''], [formatTime(row.createdAt), '']]) {
       const td = document.createElement('td'); td.textContent = val ?? ''; if (klass) td.className = klass; tr.append(td);
     }
     const action = document.createElement('td'), del = document.createElement('button');
     del.className = 'action danger small'; del.textContent = '删除'; del.disabled = busy;
     del.addEventListener('click', () => removeBooking(row)); action.append(del); tr.append(action); tbody.append(tr);
     const card = document.createElement('article'); card.className = 'admin-entry';
-    card.innerHTML = `<div class="item-head"><strong>${html(row.employeeName)} · ${html(mealTitle(row.mealId))}</strong><span class="id-cell">#${html(row.id)}</span></div><div class="item-meta">工号 ${html(row.employeeId)}<br>用餐 ${html(row.date)} · ${html(row.mealStart)}–${html(row.mealEnd)}<br>提交于 ${html(formatTime(row.createdAt))}</div>`;
+    card.innerHTML = `<div class="item-head"><strong>${html(row.employeeName)} · ${html(displayMeal(row))}</strong><span class="id-cell">#${html(row.id)}</span></div><div class="item-meta">工号 ${html(row.employeeId)}<br>用餐 ${html(row.date)} · ${html(row.mealStart)}–${html(row.mealEnd)}<br>提交于 ${html(formatTime(row.createdAt))}</div>`;
     const d = del.cloneNode(true); d.addEventListener('click', () => removeBooking(row)); card.append(d); mobile.append(card);
   }
 }
 async function removeBooking(row) {
   if (busy) return;
-  if (!confirm(`确认删除预约吗？\n\n${row.employeeName}（${row.employeeId}）\n${row.date} · ${mealTitle(row.mealId)}\n预约编号：${row.id}\n\n删除后该员工可重新预约此餐次。`)) return;
+  if (!confirm(`确认删除预约吗？\n\n${row.employeeName}（${row.employeeId}）\n${row.date} · ${displayMeal(row)}\n预约编号：${row.id}\n\n删除后该员工可重新预约此餐次。`)) return;
   busy = true; renderBookings();
   try { await authApi('/api/admin/reservations/' + encodeURIComponent(row.id), { method: 'DELETE' }); await refresh(); adminAlert('已删除预约 ' + row.id + '，该餐次现在可以重新预约。'); }
   catch (error) { onError(error); }
@@ -94,20 +116,83 @@ function renderRoster() {
   }
   $('rosterNote').textContent = subset.length > 100 ? '为保证页面流畅，仅显示前 100 条，请使用搜索框缩小范围。' : '';
 }
+function collectMealCards() {
+  return [...document.querySelectorAll('#configCards [data-id]')].map(el => ({
+    id: el.dataset.id,
+    nameZh: el.querySelector('.name-zh').value.trim(),
+    nameEn: el.querySelector('.name-en').value.trim(),
+    nameEs: el.querySelector('.name-es').value.trim(),
+    start: el.querySelector('.meal-start').value,
+    end: el.querySelector('.meal-end').value,
+    enabled: el.querySelector('.meal-enabled').checked,
+  }));
+}
+function displayMealCards(meals) {
+  $('configCards').innerHTML = meals.map((raw,index) => {
+    const m = normalMeal(raw);
+    return `<article class="config-card" data-id="${html(m.id)}">
+      <div class="meal-card-header"><h3>${mealIcon(m.id)} <span>${html(m.nameZh)}</span></h3><div class="btn-row">
+      <button type="button" class="action secondary small move-up" title="上移" ${index===0?'disabled':''}>↑</button>
+      <button type="button" class="action secondary small move-down" title="下移" ${index===meals.length-1?'disabled':''}>↓</button>
+      <button type="button" class="action danger small remove-meal" title="删除餐次">删除</button></div></div>
+      <div class="meal-name-fields">
+        <label><span class="label">中文名称</span><input class="control name-zh" maxlength="40" value="${html(m.nameZh)}" placeholder="例如：夜宵"></label>
+        <label><span class="label">English name</span><input class="control name-en" maxlength="40" value="${html(m.nameEn)}" placeholder="e.g. Late-night meal"></label>
+        <label><span class="label">Nombre en español (México)</span><input class="control name-es" maxlength="40" value="${html(m.nameEs)}" placeholder="Ej. Cena nocturna"></label>
+      </div>
+      <div class="times"><label><span class="label">开始时间</span><input class="control meal-start" type="time" value="${html(m.start)}" required></label><label><span class="label">结束时间</span><input class="control meal-end" type="time" value="${html(m.end)}" required></label></div>
+      <label class="toggle-line"><input type="checkbox" class="meal-enabled" ${m.enabled ? 'checked' : ''}> 对员工开放此餐次</label>
+    </article>`;
+  }).join('');
+  $('configCards').querySelectorAll('.config-card').forEach((el,index) => {
+    el.querySelector('.remove-meal').addEventListener('click', () => {
+      const draft = collectMealCards();
+      if (draft.length === 1) { message('settingsStatus','必须至少保留一个餐次', true); return; }
+      if (!confirm(`确定删除「${draft[index].nameZh || draft[index].id}」吗？保存设置后员工端将不再显示，历史预约仍保留。`)) return;
+      draft.splice(index,1); displayMealCards(draft);
+    });
+    el.querySelector('.move-up').addEventListener('click', () => {
+      if(index === 0) return; const draft=collectMealCards(); [draft[index-1], draft[index]]=[draft[index],draft[index-1]]; displayMealCards(draft);
+    });
+    el.querySelector('.move-down').addEventListener('click', () => {
+      const draft=collectMealCards(); if(index === draft.length-1) return;
+      [draft[index+1], draft[index]]=[draft[index],draft[index+1]]; displayMealCards(draft);
+    });
+    el.querySelector('.name-zh').addEventListener('input', ev => { el.querySelector('h3 span').textContent = ev.target.value || '未命名'; });
+  });
+}
 function renderSettings() {
   if (!db) return;
   $('timezoneInput').value = db.settings.timeZone;
-  $('advanceInput').value = db.settings.maxAdvanceDays;
-  $('configCards').innerHTML = db.settings.meals.map(m => `<article class="config-card" data-id="${html(m.id)}"><div class="flex" style="justify-content:space-between"><h3>${({ breakfast: '🥐', lunch: '🍚', dinner: '🍲' })[m.id]} ${html(mealTitle(m.id))}</h3><span class="pill">${html(m.id)}</span></div><p class="muted">员工用餐时间区间</p><div class="times"><label><span class="label">开始时间</span><input class="control meal-start" type="time" value="${html(m.start)}" required></label><label><span class="label">结束时间</span><input class="control meal-end" type="time" value="${html(m.end)}" required></label></div><label class="toggle-line"><input type="checkbox" class="meal-enabled" ${m.enabled ? 'checked' : ''}> 开放员工预约此餐次</label></article>`).join('');
+  displayMealCards(db.settings.meals);
+}
+function addMeal() {
+  if(!db || busy) return;
+  const draft = collectMealCards();
+  if(draft.length >= 12) return message('settingsStatus','最多只能设置 12 个餐次',true);
+  let id;
+  do { id = 'meal_' + crypto.getRandomValues(new Uint32Array(1))[0].toString(36); }
+  while (draft.some(m => m.id === id));
+  draft.push({id,nameZh:'新餐次',nameEn:'New meal',nameEs:'Nueva comida',start:'20:00',end:'21:00',enabled:false});
+  displayMealCards(draft);
+  const newest = $('configCards').lastElementChild;
+  newest.scrollIntoView({behavior:'smooth',block:'nearest'});
+  const input = newest.querySelector('.name-zh'); input.focus(); input.select();
+  message('settingsStatus','已添加餐次。填写名称与时间后，记得点击保存。');
 }
 async function saveSettings() {
   if (!db || busy) return;
-  const meals = [...document.querySelectorAll('#configCards [data-id]')].map(el => ({ id: el.dataset.id, label: mealTitle(el.dataset.id), start: el.querySelector('.meal-start').value, end: el.querySelector('.meal-end').value, enabled: el.querySelector('.meal-enabled').checked }));
-  for (const m of meals) if (!/^\d{2}:\d{2}$/.test(m.start) || !/^\d{2}:\d{2}$/.test(m.end) || m.end <= m.start) return message('settingsStatus', `${mealTitle(m.id)}结束时间必须晚于开始时间`, true);
-  const settings = { timeZone: $('timezoneInput').value.trim(), maxAdvanceDays: Number($('advanceInput').value), meals };
-  if (!settings.timeZone || !Number.isInteger(settings.maxAdvanceDays) || settings.maxAdvanceDays < 0 || settings.maxAdvanceDays > 60) return message('settingsStatus', '时区或提前预约天数无效', true);
+  const meals = collectMealCards();
+  for (const m of meals) {
+    if (!m.nameZh || [m.nameZh, m.nameEn, m.nameEs].some(n => n.length > 40)) return message('settingsStatus','中文名称不能为空，三个语言的名称均不可超过 40 字',true);
+    if (!/^\d{2}:\d{2}$/.test(m.start) || !/^\d{2}:\d{2}$/.test(m.end) || m.end <= m.start) return message('settingsStatus',`「${m.nameZh}」结束时间必须晚于开始时间`, true);
+  }
+  if (!meals.length) return message('settingsStatus','至少保留一个餐次', true);
+  const settings = { timeZone: $('timezoneInput').value.trim(), maxAdvanceDays: 0, meals };
+  try { new Intl.DateTimeFormat('en-US',{timeZone:settings.timeZone}).format(); }
+  catch { return message('settingsStatus','请输入有效的 IANA 时区，如 America/Monterrey',true); }
   busy = true; $('saveSettingsBtn').disabled = true; message('settingsStatus', '正在保存…');
-  try { await authApi('/api/admin/settings', { method: 'PUT', body: settings }); await refresh(); message('settingsStatus', '✓ 时间设置已保存，员工端刷新后生效。'); }
+  try { await authApi('/api/admin/settings', { method: 'PUT', body: settings }); await refresh(); message('settingsStatus', '✓ 餐次设置已保存，员工端刷新后即可生效。'); }
   catch (error) { onError(error, 'settingsStatus'); }
   finally { busy = false; $('saveSettingsBtn').disabled = false; }
 }
@@ -203,7 +288,7 @@ function csvSafe(v) {
 function exportCSV() {
   if (!db) return;
   const data = [['预约号', '员工工号', '员工姓名', '餐次', '用餐日期', '开始时间', '结束时间', '预约提交时间'],
-    ...filtered.map(r => [r.id, r.employeeId, r.employeeName, mealTitle(r.mealId), r.date, r.mealStart, r.mealEnd, formatTime(r.createdAt)])];
+    ...filtered.map(r => [r.id, r.employeeId, r.employeeName, displayMeal(r), r.date, r.mealStart, r.mealEnd, formatTime(r.createdAt)])];
   const csv = '\uFEFF' + data.map(r => r.map(csvSafe).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const link = document.createElement('a'), url = URL.createObjectURL(blob);
@@ -217,7 +302,7 @@ function selectTab(tab) {
 function init() {
   if (isDemo) { $('demoLoginBtn').classList.remove('hidden'); $('demoAdminHint').classList.remove('hidden'); }
   $('loginForm').addEventListener('submit', login);
-  $('demoLoginBtn').onclick = () => { $('adminPassword').value = 'demo'; login(); };
+  $('demoLoginBtn').onclick = () => { $('adminPassword').value = String(window.APP_CONFIG?.github?.adminPassword ?? ''); login(); };
   $('logoutBtn').onclick = logout;
   $('refreshBtn').onclick = () => refresh().catch(e => onError(e));
   document.querySelectorAll('.tab').forEach(btn => btn.onclick = () => selectTab(btn.dataset.tab));
@@ -228,5 +313,6 @@ function init() {
   $('rosterFile').onchange = readFile;
   $('importBtn').onclick = importRoster;
   $('saveSettingsBtn').onclick = saveSettings;
+  $('addMealBtn').onclick = addMeal;
 }
 init();

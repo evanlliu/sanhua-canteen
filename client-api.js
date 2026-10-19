@@ -1,4 +1,5 @@
 import { githubApi } from './github-store.js';
+import { normalMeal } from './meal-schema.js';
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const KEY = 'evan-canteen-local-demo-v1';
 const initialState = {
@@ -40,7 +41,7 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   const url = new URL(path, location.origin === 'null' ? 'https://demo.local' : location.origin);
   const p = url.pathname;
   if (p.startsWith('/api/admin/') && adminKey !== 'demo') bad('演示模式请使用“体验管理后台”按钮');
-  if (p === '/api/config') return { settings: db.settings, ...localClock(db.settings.timeZone) };
+  if (p === '/api/config') return { settings: { ...db.settings, maxAdvanceDays: 0, meals: db.settings.meals.map(normalMeal) }, ...localClock(db.settings.timeZone) };
   if (p === '/api/employees/search') {
     const q = url.searchParams.get('q') || '';
     return { employees: /^\d{4,24}$/.test(q) ? db.employees.filter(x => x.employeeId.includes(q)).slice(0, 12) : [] };
@@ -53,14 +54,15 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
     const m = db.settings.meals.find(x => x.id === mealId);
     if (!m?.enabled) bad('此餐次尚未开放');
     const { today, nowTime } = localClock(db.settings.timeZone);
-    if (date < today || date > dateOffset(today, db.settings.maxAdvanceDays)) bad('预约日期不在允许范围内');
+    if (date !== today) bad('仅允许预约当天用餐，请刷新页面后重试');
     if (date === today && nowTime >= m.end) bad('该餐次今日已结束');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealId === mealId)) bad('此员工已预约当天该餐次，每餐只能预约一次');
+    if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealStart < m.end && m.start < x.mealEnd)) bad('该员工在重叠的用餐时段已预约，不能重复预约');
     const id = 'C' + Array.from(crypto.getRandomValues(new Uint8Array(5)), n => n.toString(16).padStart(2, '0')).join('').toUpperCase();
-    const reservation = { id, employeeId, employeeName: e.name, mealId, date, mealStart: m.start, mealEnd: m.end, createdAt: new Date().toISOString() };
+    const reservation = { id, employeeId, employeeName: e.name, mealId, date, mealStart: m.start, mealEnd: m.end, mealNameZh: normalMeal(m).nameZh, mealNameEn: normalMeal(m).nameEn, mealNameEs: normalMeal(m).nameEs, createdAt: new Date().toISOString() };
     db.reservations.push(reservation); demoSave(db); return { reservation };
   }
-  if (p === '/api/admin/dashboard') return { ...db, ...localClock(db.settings.timeZone) };
+  if (p === '/api/admin/dashboard') return { ...db, settings: {...db.settings, maxAdvanceDays: 0, meals: db.settings.meals.map(normalMeal)}, ...localClock(db.settings.timeZone) };
   if (p === '/api/admin/import-roster' && method === 'POST') {
     const oldCount = db.employees.length;
     if (body.mode === 'replace') db.employees = body.employees;
@@ -71,7 +73,7 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
     }
     demoSave(db); return { oldCount, imported: body.employees.length, total: db.employees.length };
   }
-  if (p === '/api/admin/settings' && method === 'PUT') { db.settings = body; demoSave(db); return { settings: db.settings }; }
+  if (p === '/api/admin/settings' && method === 'PUT') { if (!Array.isArray(body?.meals) || !body.meals.length) bad('至少保留一个餐次'); db.settings = {...body, maxAdvanceDays: 0, meals: body.meals.map(normalMeal)}; demoSave(db); return { settings: db.settings }; }
   if (p.startsWith('/api/admin/reservations/') && method === 'DELETE') {
     const id = p.split('/').pop(), index = db.reservations.findIndex(r => r.id === id);
     if (index < 0) bad('记录不存在');

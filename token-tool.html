@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>sanhua-canteen · GitHub Token 混淆工具</title>
+<style>
+:root{color-scheme:light}body{font-family:system-ui,"Microsoft YaHei",sans-serif;max-width:740px;margin:30px auto;padding:0 18px;color:#23302b;background:#f6f8f5;line-height:1.7}
+main{background:white;border:1px solid #e0e6df;border-radius:16px;padding:24px;box-shadow:0 10px 32px #16352710}
+h1{font-size:24px;margin-top:0}label{display:block;margin:14px 0 4px;font-weight:650}input,textarea{width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid #cbd6cc;border-radius:9px;background:#fff;font:inherit;min-height:44px}
+textarea{font:13px Consolas,monospace;min-height:115px}button{cursor:pointer;border:0;border-radius:9px;background:#28694a;color:#fff;padding:11px 17px;font-weight:650;font-size:15px;margin:15px 10px 4px 0}button:disabled{opacity:.5;cursor:default}.warn{background:#fff1d5;color:#755109;padding:12px 15px;border-radius:10px}
+.hint{color:#647369;font-size:13px}.actions{display:flex;gap:10px;flex-wrap:wrap}code{background:#e9f1ea;padding:2px 5px;border-radius:4px}#status{min-height:22px;color:#28694a}
+</style></head><body><main>
+<h1>GitHub Token 本地混淆工具</h1>
+<p class="warn"><strong>注意：</strong>此工具与中秋项目使用相同的 SHA-256 + AES-GCM 混淆格式。它只避免在 <code>config.js</code> 中直接显示 Token，<strong>不是安全存储</strong>。公开页面的访问者仍能还原 Token，请勿用真实员工资料正式运营。</p>
+<p>本页面在浏览器本地计算，不向外发送 Token。建议解压后在电脑上打开本文件；生成完毕后不要把明文 Token 发给别人。</p>
+<label for="tokenInput">GitHub Fine-grained PAT（写入 Token）</label>
+<input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_...">
+<label for="materialInput">keyMaterial（公开混淆材料，可点击自动随机生成）</label>
+<input id="materialInput" type="text" autocomplete="off" spellcheck="false">
+<div class="actions"><button id="makeMaterial" type="button">随机生成 keyMaterial</button><button id="makeCipher" type="button">生成混淆配置</button></div>
+<label for="output">复制下面两行到 main 分支的 config.js</label>
+<textarea id="output" readonly placeholder="生成后会显示 tokenCiphertext 和 keyMaterial"></textarea>
+<div class="actions"><button id="copyBtn" disabled type="button">复制配置</button></div>
+<div id="status" role="status"></div>
+<p class="hint">格式兼容中秋项目：base64(12 字节随机 IV + AES-GCM 密文及认证标签)，AES 密钥由 SHA-256(keyMaterial) 派生。每次生成的密文可能不同。</p>
+</main><script>
+const el=id=>document.getElementById(id);
+function b64(bytes){let s='';for(let i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode(...bytes.subarray(i,i+0x8000));return btoa(s)}
+function randomMaterial(){return Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>b.toString(16).padStart(2,'0')).join('')}
+el('makeMaterial').onclick=()=>{el('materialInput').value=randomMaterial();el('status').textContent='已生成新的随机材料。'};
+el('makeCipher').onclick=async()=>{
+  const token=el('tokenInput').value.trim(),material=el('materialInput').value.trim();
+  if(!token || !material){el('status').textContent='请先填写 Token 与 keyMaterial';return}
+  if(!crypto?.subtle){el('status').textContent='浏览器当前不支持 Web Crypto，请通过 localhost 或 HTTPS 打开。';return}
+  el('makeCipher').disabled=true;
+  try{
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(material));
+    const key=await crypto.subtle.importKey('raw',digest,{name:'AES-GCM'},false,['encrypt']);
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const enc=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(token)));
+    const packed=new Uint8Array(iv.length+enc.length);packed.set(iv);packed.set(enc,iv.length);
+    el('output').value=`tokenCiphertext: '${b64(packed)}',\nkeyMaterial: '${material}',`;
+    el('copyBtn').disabled=false;el('tokenInput').value='';el('status').textContent='已生成。请把两行配置复制到 config.js，然后保存。';
+  }catch(e){el('status').textContent='生成失败：'+e.message}finally{el('makeCipher').disabled=false}
+};
+el('copyBtn').onclick=async()=>{
+  try{await navigator.clipboard.writeText(el('output').value);el('status').textContent='已复制到剪贴板';}
+  catch{el('output').focus();el('output').select();el('status').textContent='浏览器无法自动复制，请按 Ctrl+C 复制选中内容';}
+};
+el('materialInput').value=randomMaterial();
+</script></body></html>

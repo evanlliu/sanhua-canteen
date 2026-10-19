@@ -1,9 +1,10 @@
 /**
  * GitHub Pages direct-mode data layer.
- * IMPORTANT: browser-side bookingToken is PUBLIC. This implementation is for
- * disposable, low-sensitivity test deployments only. A static page cannot
- * provide an authenticated writable database or secure admin authorization.
+ * Token is AES-GCM obfuscated like midautumn-reservation.
+ * IMPORTANT: browser-side decryption key is PUBLIC; this is NOT real secrecy.
+ * Use disposable test credentials and fictitious employee data ONLY.
  */
+import { decryptGitHubToken } from './token-obfuscation.js';
 const MEAL_IDS = ['breakfast', 'lunch', 'dinner'];
 const defaultMeals = [
   { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
@@ -21,18 +22,27 @@ function config() {
   }
   return cfg;
 }
-function tokenFor(path, method, adminKey) {
+let tokenCacheKey = '', tokenCachePromise = null;
+async function tokenFor(path, method, adminKey) {
   const cfg = config();
   const isAdmin = path.startsWith('/api/admin/');
-  const token = String(isAdmin ? (adminKey || '') : (cfg.bookingToken || '')).trim();
-  if (isAdmin && (!token || /^(YOUR_|REPLACE_|PASTE_)/i.test(token))) fail('请输入管理员 GitHub Token', 401);
-  // Public 仓库中匿名 GET 可读取 data 分支（不需要暴露写入 Token）。
-  // 但真正提交预约需要写入凭据；纯静态网页无法安全持有该凭据。
-  if (!isAdmin && (!token || /^(YOUR_|REPLACE_|PASTE_)/i.test(token))) {
-    if (method === 'GET') return '';
-    fail('此页面尚未配置可写入 GitHub 的凭据，无法提交真实预约。请先使用 ?demo=1 演示。');
+  if (isAdmin) {
+    // 后台保持独立登录：管理员自己输入 PAT，仅保存在当前页面内存中。
+    const token = String(adminKey || '').trim();
+    if (!token || /^(YOUR_|REPLACE_|PASTE_)/i.test(token)) fail('请输入管理员 GitHub Token', 401);
+    return token;
   }
-  return token;
+  // 公开仓库的匿名读取无须解密或发送 PAT。
+  if (method === 'GET') return '';
+  const ciphertext = String(cfg.tokenCiphertext || '').trim();
+  const material = String(cfg.keyMaterial || '').trim();
+  if (!ciphertext || !material) fail('尚未配置加密的 GitHub 写入 Token，请使用 token-tool.html 生成后填写 config.js，或使用 ?demo=1 演示。');
+  const cacheKey = JSON.stringify([ciphertext, material]);
+  if (cacheKey !== tokenCacheKey || !tokenCachePromise) {
+    tokenCacheKey = cacheKey;
+    tokenCachePromise = decryptGitHubToken(ciphertext, material);
+  }
+  return tokenCachePromise;
 }
 function ghUrl(cfg) {
   const location = String(cfg.path).split('/').filter(Boolean).map(encodeURIComponent).join('/');
@@ -163,7 +173,7 @@ function newCode() { return 'C' + Array.from(crypto.getRandomValues(new Uint8Arr
 const byDate = rows => [...rows].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)));
 export async function githubApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   const url = new URL(path, 'https://canteen.invalid');
-  const p = url.pathname, token = tokenFor(p, method, adminKey);
+  const p = url.pathname, token = await tokenFor(p, method, adminKey);
   if (p === '/api/config' && method === 'GET') {
     const { data } = await read(token);
     return { settings: data.settings, ...clock(data.settings.timeZone) };

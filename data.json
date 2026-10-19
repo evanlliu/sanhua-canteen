@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-19T00:00:00.000Z",
+  "settings": {
+    "timeZone": "America/Monterrey",
+    "maxAdvanceDays": 7,
+    "meals": [
+      {
+        "id": "breakfast",
+        "label": "早餐",
+        "start": "07:00",
+        "end": "09:00",
+        "enabled": false
+      },
+      {
+        "id": "lunch",
+        "label": "午餐",
+        "start": "11:30",
+        "end": "14:00",
+        "enabled": true
+      },
+      {
+        "id": "dinner",
+        "label": "晚餐",
+        "start": "17:30",
+        "end": "20:00",
+        "enabled": true
+      }
+    ]
+  },
+  "employees": [
+    {
+      "employeeId": "1000000001",
+      "name": "测试员工"
+    }
+  ],
+  "reservations": []
+}

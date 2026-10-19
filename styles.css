@@ -65,3 +65,25 @@ body.admin-login-mode{height:100dvh;min-height:100vh;display:flex;flex-direction
   .login-icon{display:none}
   .login-panel .login-subtitle{margin-bottom:13px}
 }
+
+/* V5 — Staff-only floating actions without a masthead */
+.staff-page .meal-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.staff-page .compact-main{padding-top:91px}
+.floating-staff-nav{
+  position:fixed;top:18px;right:max(24px,calc((100vw - 1150px)/2 + 24px));
+  z-index:60;display:flex;align-items:center;justify-content:flex-end;gap:10px;
+  padding:4px;border-radius:999px;
+  background:rgba(248,249,244,.85);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  box-shadow:0 7px 28px rgba(29,62,43,.055);
+}
+.staff-page .floating-staff-nav .language-picker,
+.staff-page .floating-staff-nav .navlink{box-shadow:0 2px 9px rgba(29,62,43,.045)}
+.meals-empty{grid-column:1/-1;text-align:center;color:var(--muted);font-size:14px;line-height:1.7;padding:34px 20px}
+@media(max-width:850px){.staff-page .meal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){
+  .staff-page .meal-grid{grid-template-columns:1fr}
+  .staff-page .compact-main{padding-top:81px}
+  .floating-staff-nav{top:10px;right:12px;gap:6px}
+  .staff-page .floating-staff-nav .navlink{font-size:12px;padding:9px 11px}
+}

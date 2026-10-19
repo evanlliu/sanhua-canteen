@@ -1,10 +1,9 @@
 import { api, isDemo, html, localClock } from './client-api.js';
 import { normalMeal, mealName, mealIcon, reservationMeal } from './meal-schema.js';
-import { LANGUAGES, translate } from './i18n.js';
+import { LANGUAGES, translate, detectDeviceLanguage } from './i18n.js';
 const $ = id => document.getElementById(id);
 const employeeInput = $('employeeInput'), dropdown = $('employeeDropdown'), dateInput = $('mealDate');
-let lang = 'zh';
-try { const saved = localStorage.getItem('sanhua-canteen-language'); if (LANGUAGES.includes(saved)) lang = saved; } catch {}
+let lang = detectDeviceLanguage(navigator.languages?.length ? navigator.languages : [navigator.language]);
 const tr = (key,args) => translate(lang,key,args);
 let state = null, selected = null, options = [], choice = -1, pending = null, requestSeq = 0, debounceTimer = null, loading = false;
 let lastReservations = null;
@@ -43,8 +42,8 @@ function renderDropdown() {
   dropdown.replaceChildren();
   const q = employeeInput.value.trim();
   if (!q || selected) { closeDropdown(); return; }
-  if (q.length < 4) {
-    const div = document.createElement('div'); div.className = 'dropdown-message'; div.textContent = tr('min4'); dropdown.append(div);
+  if (!/^\d{1,24}$/.test(q)) {
+    const div = document.createElement('div'); div.className = 'dropdown-message'; div.textContent = tr('invalidSearch'); dropdown.append(div);
   } else if (options.length === 0) {
     const div = document.createElement('div'); div.className = 'dropdown-message'; div.textContent = tr('noEmployee'); dropdown.append(div);
   } else {
@@ -73,7 +72,7 @@ function selectEmployee(e) {
 function scheduleSearch() {
   selected = null; renderSelected(); renderMeals();
   clearTimeout(debounceTimer); const q = employeeInput.value.trim(); requestSeq++;
-  if (!/^\d{4,24}$/.test(q)) { options = []; renderDropdown(); return; }
+  if (!/^\d{1,24}$/.test(q)) { options = []; renderDropdown(); return; }
   const seq = requestSeq;
   debounceTimer = setTimeout(async () => {
     dropdown.replaceChildren();
@@ -87,14 +86,17 @@ function renderMeals() {
   const grid = $('mealsGrid');
   if (!state) return;
   const { today, nowTime } = localClock(state.settings.timeZone);
-  if (!state.settings.meals.length) { grid.innerHTML = `<div class="panel">${html(tr('noMeals'))}</div>`; return; }
-  grid.innerHTML = state.settings.meals.map(raw => {
-    const meal = normalMeal(raw);
-    const todayEnded = nowTime >= meal.end || dateInput.value !== today;
-    const disabled = !meal.enabled || todayEnded;
-    const status = !meal.enabled ? tr('closed') : todayEnded ? tr('ended') : tr('open');
-    const reason = !meal.enabled ? tr('closedBtn') : todayEnded ? tr('endedBtn') : tr('bookNow');
-    return `<article class="meal-card ${disabled ? 'disabled' : ''}"><div class="meal-top"><span class="meal-emoji">${mealIcon(meal.id)}</span><span class="pill ${disabled ? 'lock' : ''}">${html(status)}</span></div><h3>${html(mealName(meal,lang))}</h3><div class="subtitle">${lang==='zh' ? html(meal.nameEs) : ''}</div><div class="meal-time">⏱ ${html(meal.start)} – ${html(meal.end)}</div><button class="action" data-meal="${html(meal.id)}" ${disabled || loading ? 'disabled' : ''}>${html(reason)}</button></article>`;
+  // Never display disabled meals or meals whose configured end time has passed.
+  // The same enabled/end-time rules are checked again by the GitHub API on submit.
+  const availableMeals = state.settings.meals.map(normalMeal).filter(meal =>
+    meal.enabled && dateInput.value === today && nowTime < meal.end
+  );
+  if (!availableMeals.length) {
+    grid.innerHTML = `<div class="panel meals-empty" role="status">${html(tr('noAvailableMeals'))}</div>`;
+    return;
+  }
+  grid.innerHTML = availableMeals.map(meal => {
+    return `<article class="meal-card"><div class="meal-top"><span class="meal-emoji">${mealIcon(meal.id)}</span><span class="pill">${html(tr('open'))}</span></div><h3>${html(mealName(meal,lang))}</h3><div class="subtitle">${lang==='zh' ? html(meal.nameEs) : ''}</div><div class="meal-time">⏱ ${html(meal.start)} – ${html(meal.end)}</div><button class="action" data-meal="${html(meal.id)}" ${loading ? 'disabled' : ''}>${html(tr('bookNow'))}</button></article>`;
   }).join('');
   grid.querySelectorAll('[data-meal]').forEach(btn => btn.addEventListener('click', () => openReserve(btn.dataset.meal)));
 }
@@ -154,7 +156,6 @@ async function init() {
   $('languageSelect').addEventListener('change', event => {
     if (!LANGUAGES.includes(event.target.value)) return;
     lang = event.target.value;
-    try { localStorage.setItem('sanhua-canteen-language',lang); } catch {}
     applyLanguage();
   });
   $('jumpToLookup').addEventListener('click',jumpToLookup);
@@ -178,8 +179,18 @@ async function init() {
   try {
     state = await api('/api/config');
     dateInput.value = state.today;
-    $('dateTip').textContent = tr('todayOnly') + ` (${state.settings.timeZone})`;
     renderMeals();
+    // Keep today's date and visible meal availability in sync when time passes,
+    // including when a tab stays open across midnight.
+    const updateAvailability = () => {
+      const clock = localClock(state.settings.timeZone);
+      if (dateInput.value !== clock.today) dateInput.value = clock.today;
+      renderMeals();
+    };
+    setInterval(updateAvailability, 30_000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) updateAvailability();
+    });
   } catch (error) { $('mealsGrid').innerHTML = ''; alertArea(errorText(error)); }
 }
 init();

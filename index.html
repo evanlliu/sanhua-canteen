@@ -6,10 +6,8 @@
   <title>员工用餐预约</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
-<body>
-  <header class="shell topbar staff-topbar">
-    <span class="logo"><span class="logo-mark" aria-hidden="true">✦</span><span data-i18n="siteName">员工用餐预约</span></span>
-    <nav class="topnav">
+<body class="staff-page">
+  <nav class="topnav floating-staff-nav" aria-label="快速操作 / Quick actions">
       <label class="language-picker" for="languageSelect">
         <span class="language-icon" aria-hidden="true">🌐</span>
         <select id="languageSelect" aria-label="选择语言 / Choose language / Elegir idioma">
@@ -20,25 +18,23 @@
         <span class="language-chevron" aria-hidden="true">⌄</span>
       </label>
       <a class="navlink" href="#myReservations" id="jumpToLookup" data-i18n="myReservations">我的预约</a>
-    </nav>
-  </header>
+  </nav>
   <main class="shell main compact-main">
     <div id="demoHint" class="notice hidden" data-i18n="demoNotice">🧪 演示模式：数据仅保存在当前浏览器，不会写入正式系统。</div>
     <div id="globalStatus" class="notice hidden" role="status" aria-live="polite"></div>
     <section class="panel" aria-labelledby="employeeTitle">
-      <div class="panel-head"><h2 class="section-title" id="employeeTitle"><span class="step">01</span><span data-i18n="employeeSection">确认员工信息</span></h2><span class="hint" data-i18n="employeeHint">请输入工号并从下拉结果中选择</span></div>
+      <div class="panel-head"><h2 class="section-title" id="employeeTitle"><span class="step">01</span><span data-i18n="employeeSection">确认员工信息</span></h2></div>
       <div class="fields">
         <div>
           <label class="label" for="employeeInput" data-i18n="employeeId">员工工号</label>
-          <div class="search-wrap"><input id="employeeInput" class="control" type="search" inputmode="numeric" autocomplete="off" placeholder="输入至少 4 位工号" aria-autocomplete="list" aria-expanded="false" aria-controls="employeeDropdown"><div id="employeeDropdown" class="dropdown hidden" role="listbox"></div></div>
-          <div class="tiny-note" data-i18n="employeeTip">请从花名册中选择正确的员工。</div>
+          <div class="search-wrap"><input id="employeeInput" class="control" type="search" inputmode="numeric" autocomplete="off" placeholder="输入工号（支持 1 位起）" aria-autocomplete="list" aria-expanded="false" aria-controls="employeeDropdown"><div id="employeeDropdown" class="dropdown hidden" role="listbox"></div></div>
           <div id="selectedEmployee" class="employee-selected hidden"></div>
         </div>
-        <div><label class="label" for="mealDate" data-i18n="mealDate">用餐日期（当天）</label><input id="mealDate" type="text" class="control fixed-date" readonly aria-readonly="true"><div class="tiny-note" id="dateTip" data-i18n="todayOnly">只能预约当天用餐，日期不可修改。</div></div>
+        <div><label class="label" for="mealDate" data-i18n="mealDate">用餐日期（当天）</label><input id="mealDate" type="text" class="control fixed-date" readonly aria-readonly="true"></div>
       </div>
     </section>
     <section class="section-margin" aria-labelledby="mealsTitle"><div class="panel-head" style="margin-bottom:0"><h2 class="section-title" id="mealsTitle"><span class="step">02</span><span data-i18n="chooseMeal">选择预约餐次</span></h2><span class="hint" data-i18n="mealRule">每位员工每天每个餐次限预约一次</span></div><div id="mealsGrid" class="meal-grid"><div class="panel" style="grid-column:1/-1;color:#748b7b" data-i18n="loadingMeals">正在读取餐次设置…</div></div></section>
-    <section id="myReservations" class="panel lookup-panel" aria-labelledby="lookupTitle"><div class="lookup-head"><h2 id="lookupTitle" data-i18n="lookupTitle">查看我的预约</h2><span class="hint" data-i18n="lookupHint">输入工号查询预约号码</span></div><div class="lookup-row"><input id="lookupEmployeeId" type="search" inputmode="numeric" class="control" placeholder="输入完整工号查看预约号码"><button id="lookupBtn" class="action" data-i18n="lookupBtn">查询预约</button></div><div id="lookupStatus" class="status" role="status"></div><div id="reservationList" class="reservation-list" aria-live="polite"></div></section>
+    <section id="myReservations" class="panel lookup-panel" aria-labelledby="lookupTitle"><div class="lookup-head"><h2 id="lookupTitle" data-i18n="lookupTitle">查看我的预约</h2></div><div class="lookup-row"><input id="lookupEmployeeId" type="search" inputmode="numeric" class="control" placeholder="输入完整工号查看预约号码"><button id="lookupBtn" class="action" data-i18n="lookupBtn">查询预约</button></div><div id="lookupStatus" class="status" role="status"></div><div id="reservationList" class="reservation-list" aria-live="polite"></div></section>
   </main>
   <div class="modal-backdrop" id="reserveModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true"><div class="modal"><button id="closeModal" class="x" aria-label="关闭">×</button><div class="confirm-icon" id="modalEmoji">🥢</div><h2 id="modalTitle"></h2><p id="modalText" class="modal-desc"></p><div class="modal-detail" id="modalDetail"></div><div id="modalStatus" class="status" aria-live="polite"></div><div class="modal-actions"><button id="cancelBtn" class="action secondary" data-i18n="goBack">返回修改</button><button id="confirmBtn" class="action" data-i18n="confirm">确认预约</button></div></div></div>
   <div id="toast" class="toast" role="status"></div>

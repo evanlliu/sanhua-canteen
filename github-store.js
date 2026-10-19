@@ -180,9 +180,18 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
   }
   if (p === '/api/employees/search' && method === 'GET') {
     const q = (url.searchParams.get('q') || '').trim();
-    if (!/^\d{4,24}$/.test(q)) return { employees: [] };
+    if (!/^\d{1,24}$/.test(q)) return { employees: [] };
     const { data } = await read(token);
-    return { employees: data.employees.filter(e => String(e.employeeId).includes(q)).slice(0, 12) };
+    // Prioritize exact matches, then prefix matches, so a one-digit ID
+    // remains visible even when the roster contains thousands of employees.
+    const rank = id => id === q ? 0 : id.startsWith(q) ? 1 : 2;
+    return { employees: data.employees
+      .filter(e => String(e.employeeId).includes(q))
+      .sort((a, b) => {
+        const left = String(a.employeeId), right = String(b.employeeId);
+        return rank(left) - rank(right) || left.length - right.length || left.localeCompare(right, 'en', { numeric: true });
+      })
+      .slice(0, 12) };
   }
   if (p === '/api/reservations/my' && method === 'GET') {
     const id = (url.searchParams.get('employeeId') || '').trim();

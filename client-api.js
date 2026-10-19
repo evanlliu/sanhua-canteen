@@ -44,7 +44,14 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   if (p === '/api/config') return { settings: { ...db.settings, maxAdvanceDays: 0, meals: db.settings.meals.map(normalMeal) }, ...localClock(db.settings.timeZone) };
   if (p === '/api/employees/search') {
     const q = url.searchParams.get('q') || '';
-    return { employees: /^\d{4,24}$/.test(q) ? db.employees.filter(x => x.employeeId.includes(q)).slice(0, 12) : [] };
+    if (!/^\d{1,24}$/.test(q)) return { employees: [] };
+    const rank = id => id === q ? 0 : id.startsWith(q) ? 1 : 2;
+    return { employees: db.employees.filter(x => String(x.employeeId).includes(q))
+      .sort((a, b) => {
+        const left = String(a.employeeId), right = String(b.employeeId);
+        return rank(left) - rank(right) || left.length - right.length || left.localeCompare(right, 'en', { numeric: true });
+      })
+      .slice(0, 12) };
   }
   if (p === '/api/reservations/my') return { reservations: db.reservations.filter(x => x.employeeId === url.searchParams.get('employeeId')).sort((a, b) => b.date.localeCompare(a.date)) };
   if (p === '/api/reservations' && method === 'POST') {

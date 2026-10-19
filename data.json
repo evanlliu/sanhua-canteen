@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-19T00:00:00.000Z",
+  "updatedAt": "2026-10-19T22:19:12.903Z",
   "settings": {
     "timeZone": "America/Monterrey",
     "maxAdvanceDays": 7,
@@ -34,5 +34,16 @@
       "name": "测试员工"
     }
   ],
-  "reservations": []
+  "reservations": [
+    {
+      "id": "CEBA40FD604",
+      "employeeId": "1000000001",
+      "employeeName": "测试员工",
+      "mealId": "dinner",
+      "date": "2026-10-19",
+      "mealStart": "17:30",
+      "mealEnd": "20:00",
+      "createdAt": "2026-10-19T22:19:12.903Z"
+    }
+  ]
 }

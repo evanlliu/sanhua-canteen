@@ -1,9 +1,24 @@
 <!doctype html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f8f9f4"><title>食堂预约管理后台</title><link rel="stylesheet" href="./styles.css"></head>
-<body>
+<body class="admin-page admin-login-mode">
 <header class="shell admin-shell topbar"><span class="logo"><span class="logo-mark">✦</span><span>食堂预约管理<small>MANAGEMENT CONSOLE</small></span></span><nav class="topnav"><button id="logoutBtn" class="navlink hidden" type="button">退出登录</button></nav></header>
-<div id="loginArea" class="login-bg"><section class="panel login-panel"><div class="eyebrow">ADMIN CONSOLE</div><div style="font-size:48px;margin:17px 0 8px">🗂️</div><h1>食堂预约管理后台</h1><p class="lead">登录后管理员工预约、花名册和自定义餐次与时间。</p><form id="loginForm"><label class="label" for="adminPassword">管理员密码 / Contraseña de administrador</label><input id="adminPassword" type="password" class="control" autocomplete="current-password" placeholder="请输入管理员密码" required><button id="loginBtn" class="action" type="submit">登录管理后台</button></form><button class="action ghost hidden" id="demoLoginBtn" style="width:100%;margin-top:10px">🧪 体验管理后台（免密演示）</button><div class="status" id="loginStatus" role="status"></div><div class="tiny-note">管理密码在 config.js 中配置，刷新页面后需重新登录。注意：此密码可从网页源代码中读取，只是临时界面门槛，不是真正的安全认证。</div></section></div>
+<div id="loginArea" class="login-bg">
+  <section class="panel login-panel" aria-labelledby="adminLoginTitle">
+    <div class="login-icon" aria-hidden="true">🔐</div>
+    <div class="eyebrow">ADMIN CONSOLE</div>
+    <h1 id="adminLoginTitle">管理员登录</h1>
+    <p class="lead login-subtitle">输入密码以管理预约记录、花名册及用餐时段。</p>
+    <form id="loginForm">
+      <label class="label" for="adminPassword">管理员密码</label>
+      <input id="adminPassword" type="password" class="control" autocomplete="current-password" placeholder="请输入管理员密码" required>
+      <button id="loginBtn" class="action" type="submit">登录管理后台</button>
+    </form>
+    <button class="action ghost hidden" id="demoLoginBtn" style="width:100%;margin-top:10px">🧪 体验管理后台（免密演示）</button>
+    <div class="status" id="loginStatus" role="status" aria-live="polite"></div>
+    <p class="tiny-note login-note">密码在 config.js 中配置，仅适用于临时使用；公开网页无法真正保护管理员密码或 Token。</p>
+  </section>
+</div>
 <main id="dashboardArea" class="shell admin-shell hidden" style="padding-bottom:75px">
   <div class="admin-heading"><div><div class="eyebrow">OPERATIONS CENTER</div><h1>食堂预约总览</h1><p class="lead" style="margin-bottom:0">员工预约、花名册维护与自定义餐次设置，一处管理。</p></div><div class="flex"><button id="refreshBtn" class="action secondary small">↻ 刷新数据</button><span id="updateLabel" class="muted"></span></div></div>
   <div id="adminAlert" class="notice hidden" role="status"></div><div id="demoAdminHint" class="notice hidden">🧪 演示模式：修改仅保存在当前浏览器。正常模式通过 GitHub API 直接读写数据文件。</div>

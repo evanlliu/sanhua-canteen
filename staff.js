@@ -30,9 +30,9 @@ function applyLanguage() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.dataset.i18n); });
   employeeInput.placeholder = tr('employeePlaceholder');
   $('lookupEmployeeId').placeholder = tr('lookupPlaceholder');
-  $('languageBtn').textContent = tr('langButton');
-  $('languageBtn').title = tr('langTitle');
-  $('languageBtn').setAttribute('aria-label', tr('langTitle'));
+  $('languageSelect').value = lang;
+  $('languageSelect').title = tr('langTitle');
+  $('languageSelect').setAttribute('aria-label', tr('langTitle'));
   renderSelected();
   renderDropdown();
   renderMeals();
@@ -151,8 +151,9 @@ function jumpToLookup(event) {
 }
 async function init() {
   if (isDemo) $('demoHint').classList.remove('hidden');
-  $('languageBtn').addEventListener('click', () => {
-    lang = LANGUAGES[(LANGUAGES.indexOf(lang)+1)%LANGUAGES.length];
+  $('languageSelect').addEventListener('change', event => {
+    if (!LANGUAGES.includes(event.target.value)) return;
+    lang = event.target.value;
     try { localStorage.setItem('sanhua-canteen-language',lang); } catch {}
     applyLanguage();
   });

@@ -25,6 +25,7 @@ async function login(event) {
     await refresh();
     $('adminPassword').value = '';
     $('loginArea').classList.add('hidden');
+    document.body.classList.remove('admin-login-mode');
     $('dashboardArea').classList.remove('hidden');
     $('logoutBtn').classList.remove('hidden');
     message('loginStatus');
@@ -33,7 +34,7 @@ async function login(event) {
     message('loginStatus', error.message || '登录失败', true);
   } finally { $('loginBtn').disabled = false; }
 }
-function logout() { adminKey = ''; db = null; $('dashboardArea').classList.add('hidden'); $('loginArea').classList.remove('hidden'); $('logoutBtn').classList.add('hidden'); $('adminPassword').value = ''; $('adminPassword').focus(); }
+function logout() { adminKey = ''; db = null; $('dashboardArea').classList.add('hidden'); $('loginArea').classList.remove('hidden'); document.body.classList.add('admin-login-mode'); window.scrollTo(0, 0); $('logoutBtn').classList.add('hidden'); $('adminPassword').value = ''; $('adminPassword').focus(); }
 async function refresh() {
   $('refreshBtn').disabled = true;
   try {

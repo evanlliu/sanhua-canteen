@@ -19,3 +19,49 @@
 .config-card .meal-card-header .btn-row{display:flex;gap:5px}
 .config-card .meal-card-header .small{padding:7px 10px}
 @media(max-width:600px){.staff-topbar .logo{font-size:15px}.staff-topbar .topnav{gap:6px}.staff-topbar .navlink{font-size:11px;padding:8px 9px}}
+
+/* V3: explicitly selectable language; compact admin sign-in view */
+.language-picker{
+  display:inline-flex;align-items:center;position:relative;gap:7px;
+  min-height:39px;padding:0 12px;border:1px solid var(--line);border-radius:100px;
+  background:#fff;color:var(--green-dark);font-size:13px;font-weight:750;
+  transition:border-color .2s,box-shadow .2s;
+}
+.language-picker:hover{border-color:var(--green)}
+.language-picker:focus-within{border-color:var(--green);box-shadow:0 0 0 4px #1c72541a}
+.language-picker .language-icon{font-size:14px;flex:none}
+.language-picker select{
+  appearance:none;-webkit-appearance:none;border:0;background:transparent;
+  color:inherit;font-weight:750;font-size:13px;outline:0;cursor:pointer;
+  padding:8px 15px 8px 0;max-width:150px;min-width:0;
+}
+.language-picker select option{background:#fff;color:#253b30}
+.language-chevron{position:absolute;right:10px;top:50%;transform:translateY(-55%);font-size:17px;pointer-events:none;color:var(--green-dark)}
+/* Login only fills the viewport; the dashboard scrolls normally after signing in. */
+body.admin-login-mode{height:100dvh;min-height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.admin-login-mode > .topbar{flex:none;width:100%}
+.admin-login-mode .login-bg{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px 20px}
+.admin-login-mode > .footer{display:none}
+.login-panel{max-width:410px;padding:28px 30px}
+.login-icon{width:50px;height:50px;display:grid;place-items:center;background:#ecf4ec;border-radius:16px;font-size:27px;margin:0 0 17px}
+.login-panel .eyebrow{margin-bottom:8px}
+.login-panel h1{font-size:27px;margin-bottom:10px;letter-spacing:-.7px}
+.login-panel .login-subtitle{font-size:13px;margin-bottom:20px;line-height:1.6}
+.login-panel .control{margin:0 0 13px}
+.login-panel .action{min-height:45px}
+.login-panel .status{margin-top:8px;min-height:0}
+.login-panel .login-note{margin-top:15px;margin-bottom:0}
+@media(max-width:600px){
+  .language-picker{padding:0 9px;gap:4px;min-height:36px}
+  .language-picker select{max-width:100px;font-size:12px;padding-right:14px}
+  .language-chevron{right:8px}
+  .login-panel{padding:23px 22px}
+  .admin-login-mode .login-bg{padding:12px 16px}
+}
+@media(max-height:600px){
+  body.admin-login-mode{height:auto;min-height:100dvh;overflow-y:auto}
+  .admin-login-mode .login-bg{min-height:0;padding:12px 16px}
+  .login-panel{padding:18px 22px}
+  .login-icon{display:none}
+  .login-panel .login-subtitle{margin-bottom:13px}
+}

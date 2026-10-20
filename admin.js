@@ -240,9 +240,112 @@ function displayMealCards(meals) {
     el.querySelector('.name-zh').addEventListener('input', ev => { el.querySelector('h3 span').textContent = ev.target.value || '未命名'; });
   });
 }
+
+// V11: timezone must be selected from a predefined list (no manual text input).
+// Common choices are prioritized. The full IANA list is included when supported
+// by the browser so existing valid configurations are never silently lost.
+const COMMON_TIME_ZONES = [
+  ['墨西哥常用时区', [
+    ['America/Monterrey', '蒙特雷 / Monterrey'],
+    ['America/Mexico_City', '墨西哥城 / Ciudad de México'],
+    ['America/Matamoros', '马塔莫罗斯 / Matamoros'],
+    ['America/Chihuahua', '奇瓦瓦 / Chihuahua'],
+    ['America/Ojinaga', '奥希纳加 / Ojinaga'],
+    ['America/Mazatlan', '马萨特兰 / Mazatlán'],
+    ['America/Hermosillo', '埃莫西约 / Hermosillo'],
+    ['America/Tijuana', '蒂华纳 / Tijuana'],
+    ['America/Cancun', '坎昆 / Cancún'],
+    ['America/Merida', '梅里达 / Mérida'],
+    ['America/Bahia_Banderas', '班德拉斯湾 / Bahía de Banderas'],
+  ]],
+  ['美洲其他常用时区', [
+    ['America/Los_Angeles', '洛杉矶 / Los Angeles'],
+    ['America/Denver', '丹佛 / Denver'],
+    ['America/Phoenix', '凤凰城 / Phoenix'],
+    ['America/Chicago', '芝加哥 / Chicago'],
+    ['America/New_York', '纽约 / New York'],
+    ['America/Bogota', '波哥大 / Bogotá'],
+    ['America/Lima', '利马 / Lima'],
+    ['America/Sao_Paulo', '圣保罗 / São Paulo'],
+  ]],
+  ['欧洲与非洲', [
+    ['Europe/London', '伦敦 / London'],
+    ['Europe/Madrid', '马德里 / Madrid'],
+    ['Europe/Paris', '巴黎 / Paris'],
+    ['Europe/Berlin', '柏林 / Berlin'],
+    ['Africa/Cairo', '开罗 / Cairo'],
+    ['Africa/Johannesburg', '约翰内斯堡 / Johannesburg'],
+  ]],
+  ['亚洲与大洋洲', [
+    ['Asia/Shanghai', '上海 / 中国标准时间'],
+    ['Asia/Hong_Kong', '香港 / Hong Kong'],
+    ['Asia/Tokyo', '东京 / Tokyo'],
+    ['Asia/Singapore', '新加坡 / Singapore'],
+    ['Asia/Kolkata', '加尔各答 / Kolkata'],
+    ['Australia/Sydney', '悉尼 / Sydney'],
+    ['Pacific/Auckland', '奥克兰 / Auckland'],
+    ['UTC', '协调世界时 / UTC'],
+  ]],
+];
+function isSupportedZone(zone) {
+  try { new Intl.DateTimeFormat('en-US', { timeZone: zone }).format(); return true; }
+  catch { return false; }
+}
+function timeZoneOffset(zone) {
+  try {
+    const part = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' })
+      .formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value;
+    return (part || 'GMT').replace(/^GMT/, 'UTC');
+  } catch { return ''; }
+}
+function populateTimeZones(savedZone) {
+  const select = $('timezoneInput');
+  const desired = String(savedZone || 'America/Monterrey');
+  const added = new Set();
+  select.replaceChildren();
+  const makeGroup = label => {
+    const group = document.createElement('optgroup');
+    group.label = label;
+    select.append(group);
+    return group;
+  };
+  const addZone = (group, zone, name = zone) => {
+    if (added.has(zone) || !isSupportedZone(zone)) return;
+    const option = document.createElement('option');
+    option.value = zone;
+    option.textContent = `${name} (${timeZoneOffset(zone)}) · ${zone}`;
+    group.append(option);
+    added.add(zone);
+  };
+  for (const [label, zones] of COMMON_TIME_ZONES) {
+    const group = makeGroup(label);
+    for (const [zone, name] of zones) addZone(group, zone, name);
+    if (!group.children.length) group.remove();
+  }
+  // All available IANA zones remain selectable beyond the commonly used groups.
+  const other = typeof Intl.supportedValuesOf === 'function'
+    ? Intl.supportedValuesOf('timeZone').filter(zone => !added.has(zone))
+    : [];
+  if (other.length) {
+    const group = makeGroup('其他 IANA 时区（按字母排序）');
+    for (const zone of other) addZone(group, zone);
+  }
+  // Preserve previously saved zones (including aliases not listed by supportedValuesOf).
+  if (!added.has(desired)) {
+    const group = document.createElement('optgroup');
+    group.label = isSupportedZone(desired) ? '当前已保存的时区' : '当前已保存（浏览器不支持，请更换）';
+    select.prepend(group);
+    const option = document.createElement('option');
+    option.value = desired;
+    option.textContent = desired;
+    group.append(option);
+  }
+  select.value = desired;
+}
+
 function renderSettings() {
   if (!db) return;
-  $('timezoneInput').value = db.settings.timeZone;
+  populateTimeZones(db.settings.timeZone);
   displayMealCards(db.settings.meals);
 }
 function addMeal() {
@@ -267,9 +370,9 @@ async function saveSettings() {
     if (!/^\d{2}:\d{2}$/.test(m.start) || !/^\d{2}:\d{2}$/.test(m.end) || m.end <= m.start) return message('settingsStatus',`「${m.nameZh}」结束时间必须晚于开始时间`, true);
   }
   if (!meals.length) return message('settingsStatus','至少保留一个餐次', true);
-  const settings = { timeZone: $('timezoneInput').value.trim(), maxAdvanceDays: 0, meals };
+  const settings = { timeZone: $('timezoneInput').value, maxAdvanceDays: 0, meals };
   try { new Intl.DateTimeFormat('en-US',{timeZone:settings.timeZone}).format(); }
-  catch { return message('settingsStatus','请输入有效的 IANA 时区，如 America/Monterrey',true); }
+  catch { return message('settingsStatus','请选择有效的 IANA 时区',true); }
   busy = true; $('saveSettingsBtn').disabled = true; message('settingsStatus', '正在保存…');
   try { await authApi('/api/admin/settings', { method: 'PUT', body: settings }); await refresh(); message('settingsStatus', '✓ 餐次设置已保存，员工端刷新后即可生效。'); }
   catch (error) { onError(error, 'settingsStatus'); }

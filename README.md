@@ -159,3 +159,11 @@ node --experimental-default-type=module tests/employee-and-meals.test.mjs
 - 修复 `admin.js` 第 190 行花名册空结果占位行 HTML 字符串的引号错误（`Unexpected token 'class'`），此前错误使整个后台模块无法加载，表现为管理员无法登录。
 - 本次仅需将 `admin.js` 覆盖至 `main` 分支根目录即可恢复后台登录，不需要修改 `config.js`、密码、Token 或 `data` 分支。统一 `README.md` 同步记录修复。
 - 回归检查采用 Node.js 的 `--input-type=module --check` 强制校验全部 JavaScript 模块语法，并运行现有三组模拟测试。
+
+
+## V12.2 — 后台预约列表响应式去重
+
+- 修复“预约管理”标签页同时显示桌面表格和手机卡片的 CSS 级联冲突：原 `.admin-entries { display:grid }` 抵消了 `.mobile-reservations { display:none }`。
+- **桌面/平板（视口宽度大于 600px）**：仅显示预约记录表格；**手机（600px 及以下）**：隐藏预约记录表格，仅显示单列预约卡片。
+- 过滤、CSV 导出、删除操作继续共用原 `admin.js` 数据逻辑，不变更 GitHub `data` 分支和 `config.js`。
+- 更新 `main` 分支根目录的 `styles.css`、`README.md` 即可；部署后 Ctrl + F5 刷新。

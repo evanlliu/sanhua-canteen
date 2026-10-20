@@ -152,3 +152,10 @@ node --experimental-default-type=module tests/employee-and-meals.test.mjs
 ### V12 回归测试
 
 `node tests/employee-and-meals.test.mjs`、`node tests/time-window.test.mjs`、`node tests/plant-and-roster.test.mjs`，使用虚构人员资料和模拟 GitHub API，不连接真实数据。
+
+
+## V12.1 — 管理后台登录脚本语法紧急修复
+
+- 修复 `admin.js` 第 190 行花名册空结果占位行 HTML 字符串的引号错误（`Unexpected token 'class'`），此前错误使整个后台模块无法加载，表现为管理员无法登录。
+- 本次仅需将 `admin.js` 覆盖至 `main` 分支根目录即可恢复后台登录，不需要修改 `config.js`、密码、Token 或 `data` 分支。统一 `README.md` 同步记录修复。
+- 回归检查采用 Node.js 的 `--input-type=module --check` 强制校验全部 JavaScript 模块语法，并运行现有三组模拟测试。

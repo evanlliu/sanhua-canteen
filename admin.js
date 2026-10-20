@@ -187,7 +187,7 @@ function renderRoster() {
   const subset = db.employees.filter(e => e.employeeId.includes(term) || e.name.toLowerCase().includes(term));
   $('rosterCount').textContent = `当前 ${db.employees.length} 位员工，匹配 ${subset.length} 位`;
   const tbody = $('rosterTbody'); tbody.replaceChildren();
-  if (!subset.length) { tbody.innerHTML = '<tr><td colspan="3"' class="admin-empty">没有匹配的员工</td></tr>'; }
+  if (!subset.length) { tbody.innerHTML = '<tr><td colspan="3" class="admin-empty">没有匹配的员工</td></tr>'; }
   for (const e of subset.slice(0, 100)) {
     const tr = document.createElement('tr');
     for (const val of [e.employeeId, e.name]) { const td = document.createElement('td'); td.textContent = val; tr.append(td); }

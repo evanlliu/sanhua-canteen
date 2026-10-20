@@ -1,5 +1,5 @@
 import { api, isDemo, html, localClock } from './client-api.js';
-import { normalMeal, mealName, mealIcon, reservationMeal, canBookMeal } from './meal-schema.js';
+import { normalMeal, mealName, mealIcon, reservationMeal, canBookMeal, mealAvailability } from './meal-schema.js';
 import { LANGUAGES, translate, detectDeviceLanguage } from './i18n.js';
 const $ = id => document.getElementById(id);
 const employeeInput = $('employeeInput'), dropdown = $('employeeDropdown'), dateInput = $('mealDate');
@@ -45,7 +45,7 @@ function renderDropdown() {
   dropdown.replaceChildren();
   const q = employeeInput.value.trim();
   if (!q || selected) { closeDropdown(); return; }
-  if (!/^\d{1,24}$/.test(q)) {
+  if (!q || q.length > 80) {
     const div = document.createElement('div'); div.className = 'dropdown-message'; div.textContent = tr('invalidSearch'); dropdown.append(div);
   } else if (options.length === 0) {
     const div = document.createElement('div'); div.className = 'dropdown-message'; div.textContent = tr('noEmployee'); dropdown.append(div);
@@ -75,7 +75,9 @@ function selectEmployee(e) {
 function scheduleSearch() {
   selected = null; renderSelected(); renderMeals();
   clearTimeout(debounceTimer); const q = employeeInput.value.trim(); requestSeq++;
-  if (!/^\d{1,24}$/.test(q)) { options = []; renderDropdown(); return; }
+  // Invalidate results from the previous ID/name query immediately.
+  options = []; choice = -1; closeDropdown();
+  if (!q || q.length > 80) { renderDropdown(); return; }
   const seq = requestSeq;
   debounceTimer = setTimeout(async () => {
     dropdown.replaceChildren();
@@ -89,18 +91,21 @@ function renderMeals() {
   const grid = $('mealsGrid');
   if (!state) return;
   const { today, nowTime } = localClock(state.settings.timeZone);
-  // Only show meals whose configured start <= now < end. The write API rechecks.
-  const availableMeals = state.settings.meals.map(normalMeal).filter(meal =>
-    canBookMeal(meal, today, dateInput.dataset.date, nowTime)
-  );
-  if (!availableMeals.length) {
-    grid.innerHTML = `<div class="panel meals-empty" role="status">${html(tr('noAvailableMeals'))}</div>`;
+  // Display ALL meals enabled for employees. Booking permission is evaluated
+  // independently so a meal that has not started or has ended remains visible.
+  const visibleMeals = state.settings.meals.map(normalMeal).filter(meal => meal.enabled);
+  if (!visibleMeals.length) {
+    grid.innerHTML = `<div class="panel meals-empty" role="status">${html(tr('noEnabledMeals'))}</div>`;
     return;
   }
-  grid.innerHTML = availableMeals.map(meal => {
-    return `<article class="meal-card"><div class="meal-top"><span class="meal-emoji">${mealIcon(meal.id)}</span><span class="pill">${html(tr('open'))}</span></div><h3>${html(mealName(meal,lang))}</h3><div class="subtitle">${lang==='zh' ? html(meal.nameEs) : ''}</div><div class="meal-time">⏱ ${html(meal.start)} – ${html(meal.end)}</div><button class="action" data-meal="${html(meal.id)}" ${loading ? 'disabled' : ''}>${html(tr('bookNow'))}</button></article>`;
+  grid.innerHTML = visibleMeals.map(meal => {
+    const availability = mealAvailability(meal, today, dateInput.dataset.date, nowTime);
+    const canBook = availability === 'open';
+    const statusKey = availability === 'upcoming' ? 'notStarted' : availability === 'ended' ? 'ended' : canBook ? 'open' : 'closed';
+    const buttonKey = availability === 'upcoming' ? 'notStartedBtn' : availability === 'ended' ? 'endedBtn' : canBook ? 'bookNow' : 'closedBtn';
+    return `<article class="meal-card${canBook ? '' : ' disabled'}"><div class="meal-top"><span class="meal-emoji">${mealIcon(meal.id)}</span><span class="pill${canBook ? '' : ' lock'}">${html(tr(statusKey))}</span></div><h3>${html(mealName(meal,lang))}</h3><div class="subtitle">${lang==='zh' ? html(meal.nameEs) : ''}</div><div class="meal-time">⏱ ${html(meal.start)} – ${html(meal.end)}</div><button class="action" data-meal="${html(meal.id)}" ${(!canBook || loading) ? 'disabled' : ''}>${html(tr(buttonKey))}</button></article>`;
   }).join('');
-  grid.querySelectorAll('[data-meal]').forEach(btn => btn.addEventListener('click', () => openReserve(btn.dataset.meal)));
+  grid.querySelectorAll('[data-meal]:not(:disabled)').forEach(btn => btn.addEventListener('click', () => openReserve(btn.dataset.meal)));
 }
 function openReserve(mealId) {
   if (!selected) { toast(tr('chooseEmployee')); employeeInput.focus(); return; }

@@ -6,6 +6,7 @@
  */
 import { decryptGitHubToken } from './token-obfuscation.js';
 import { normalMeal, mealName, canBookMeal } from './meal-schema.js';
+import { searchEmployees } from './employee-search.js';
 const defaultMeals = [
   { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
   { id: 'lunch', label: '午餐', start: '11:30', end: '14:00', enabled: true },
@@ -179,19 +180,9 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
     return { settings: data.settings, ...clock(data.settings.timeZone) };
   }
   if (p === '/api/employees/search' && method === 'GET') {
-    const q = (url.searchParams.get('q') || '').trim();
-    if (!/^\d{1,24}$/.test(q)) return { employees: [] };
+    const q = url.searchParams.get('q') || '';
     const { data } = await read(token);
-    // Prioritize exact matches, then prefix matches, so a one-digit ID
-    // remains visible even when the roster contains thousands of employees.
-    const rank = id => id === q ? 0 : id.startsWith(q) ? 1 : 2;
-    return { employees: data.employees
-      .filter(e => String(e.employeeId).includes(q))
-      .sort((a, b) => {
-        const left = String(a.employeeId), right = String(b.employeeId);
-        return rank(left) - rank(right) || left.length - right.length || left.localeCompare(right, 'en', { numeric: true });
-      })
-      .slice(0, 12) };
+    return { employees: searchEmployees(data.employees, q) };
   }
   if (p === '/api/reservations/my' && method === 'GET') {
     const id = (url.searchParams.get('employeeId') || '').trim();

@@ -33,8 +33,8 @@
       <div class="panel-head"><h2 class="section-title" id="employeeTitle"><span class="step">01</span><span data-i18n="employeeSection">确认员工信息</span></h2></div>
       <div class="fields">
         <div>
-          <label class="label" for="employeeInput" data-i18n="employeeId">员工工号</label>
-          <div class="search-wrap"><input id="employeeInput" class="control" type="search" inputmode="numeric" autocomplete="off" placeholder="输入工号（支持 1 位起）" aria-autocomplete="list" aria-expanded="false" aria-controls="employeeDropdown"><div id="employeeDropdown" class="dropdown hidden" role="listbox"></div></div>
+          <label class="label" for="employeeInput" data-i18n="employeeId">员工工号或姓名</label>
+          <div class="search-wrap"><input id="employeeInput" class="control" type="search" inputmode="search" maxlength="80" autocomplete="off" placeholder="输入工号或员工姓名" aria-autocomplete="list" aria-expanded="false" aria-controls="employeeDropdown"><div id="employeeDropdown" class="dropdown hidden" role="listbox"></div></div>
           <div id="selectedEmployee" class="employee-selected hidden"></div>
         </div>
         <div><label class="label" for="mealDate" data-i18n="mealDate">用餐时间（当天）</label><input id="mealDate" type="text" class="control fixed-date" readonly aria-readonly="true"></div>

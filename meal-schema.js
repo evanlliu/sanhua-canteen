@@ -28,6 +28,18 @@ export function normalMeal(m) {
 export function canBookMeal(meal, today, mealDate, nowTime) {
   return Boolean(meal?.enabled) && mealDate === today && nowTime >= meal.start && nowTime < meal.end;
 }
+/**
+ * Rendering state is distinct from booking permission: all meals marked as
+ * "enabled" by the administrator stay visible, but only in-window meals can
+ * be booked. The GitHub API and demo API validate again before writing.
+ */
+export function mealAvailability(meal, today, mealDate, nowTime) {
+  if (!meal?.enabled) return 'hidden';
+  if (mealDate !== today) return 'not-today';
+  if (nowTime < meal.start) return 'upcoming';
+  if (nowTime >= meal.end) return 'ended';
+  return 'open';
+}
 export function mealIcon(id) { return PRESET[id]?.icon || '🍽️'; }
 export function reservationMeal(r, meals = [], lang = 'zh') {
   // Snapshot is retained when a meal is removed or renamed.

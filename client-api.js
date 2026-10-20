@@ -1,5 +1,6 @@
 import { githubApi } from './github-store.js';
 import { normalMeal, canBookMeal } from './meal-schema.js';
+import { searchEmployees } from './employee-search.js';
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const KEY = 'evan-canteen-local-demo-v1';
 const initialState = {
@@ -43,15 +44,7 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   if (p.startsWith('/api/admin/') && adminKey !== 'demo') bad('演示模式请使用“体验管理后台”按钮');
   if (p === '/api/config') return { settings: { ...db.settings, maxAdvanceDays: 0, meals: db.settings.meals.map(normalMeal) }, ...localClock(db.settings.timeZone) };
   if (p === '/api/employees/search') {
-    const q = url.searchParams.get('q') || '';
-    if (!/^\d{1,24}$/.test(q)) return { employees: [] };
-    const rank = id => id === q ? 0 : id.startsWith(q) ? 1 : 2;
-    return { employees: db.employees.filter(x => String(x.employeeId).includes(q))
-      .sort((a, b) => {
-        const left = String(a.employeeId), right = String(b.employeeId);
-        return rank(left) - rank(right) || left.length - right.length || left.localeCompare(right, 'en', { numeric: true });
-      })
-      .slice(0, 12) };
+    return { employees: searchEmployees(db.employees, url.searchParams.get('q') || '') };
   }
   if (p === '/api/reservations/my') return { reservations: db.reservations.filter(x => x.employeeId === url.searchParams.get('employeeId')).sort((a, b) => b.date.localeCompare(a.date)) };
   if (p === '/api/reservations' && method === 'POST') {

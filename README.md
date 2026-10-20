@@ -1,6 +1,6 @@
 # sanhua-canteen — 员工食堂预约系统
 
-> 当前版本：**V13（日期 + Plant + 每日流水号）** · 单仓库、双分支、GitHub Pages + GitHub Contents API 直连。以后**只更新根目录 `README.md`**，不再创建 `README_V*.md` 等文件。本文件整合了 V1～V13 的功能和主要更新历史。
+> 当前版本：**V13.1（后台 Cookie 登录首屏优化）** · 单仓库、双分支、GitHub Pages + GitHub Contents API 直连。以后**只更新根目录 `README.md`**，不再创建 `README_V*.md` 等文件。本文件整合了 V1～V13.1 的功能和主要更新历史。
 
 ## 1. 项目结构与入口
 
@@ -195,3 +195,13 @@ node --experimental-default-type=module tests/plant-and-roster.test.mjs
 - **上限**：每个 Plant 每天最多分配 9999 个编号，超出会拒绝继续生成而不是重复编号。计数器持续存档，须关注 `data.json` 的体积。
 
 **V13 最小更新**：`main` 分支覆盖 `plant-schema.js`、`github-store.js`、`client-api.js`、`README.md`。不替换 `config.js`，不手动修改 `data` 分支，建议部署完成后 Ctrl + F5 刷新两端网页。
+
+
+## V13.1 — 后台 Cookie 自动恢复登录，不再闪现密码框
+
+- 登录有效期仍为 **5 小时**，刷新**不续期**，主动退出或过期后重新输入密码。
+- 后台首次加载时，`admin.html` 在首屏绘制前同步判断是否存在未过期的登录 Cookie：没有则直接显示密码框；有则直接显示“正在进入管理后台…”的加载状态，不先绘制登录表单。
+- 随后 `admin.js` 继续校验 Cookie 的密码指纹并读取预约数据，校验和数据读取成功后才显示管理界面；Cookie 失效或恢复失败则显示登录框及必要错误信息。
+- 移除了密码输入框的 HTML `autofocus` 属性，未登录时再由 `admin.js` 聚焦，避免恢复过程错误抢占焦点。
+- **仅需覆盖 `main` 分支**：`admin.html`、`admin.js`、`README.md`。不更改 `styles.css`、`config.js` 或 `data` 分支。
+- 此 Cookie 机制仅改善使用体验，并不提供服务端鉴权；`config.js` 中公开的前端密码及混淆 Token 仍可被访问者读取，请勿用于保护真实人员数据。

@@ -65,6 +65,8 @@ function showDashboard() {
   document.body.classList.remove('admin-login-mode');
   $('dashboardArea').classList.remove('hidden');
   $('logoutBtn').classList.remove('hidden');
+  // 完成数据加载后再切到后台；恢复 Cookie 时完全不会闪现登录表单。
+  document.documentElement.dataset.adminBoot = 'dashboard';
   message('loginStatus');
 }
 
@@ -107,6 +109,7 @@ function logout() {
   $('dashboardArea').classList.add('hidden');
   $('loginArea').classList.remove('hidden');
   document.body.classList.add('admin-login-mode');
+  document.documentElement.dataset.adminBoot = 'login';
   window.scrollTo(0, 0);
   $('logoutBtn').classList.add('hidden');
   $('adminPassword').value = '';
@@ -538,10 +541,14 @@ function init() {
   restoreLogin();
 }
 async function restoreLogin() {
-  // On first load, show the password field until a valid unexpired cookie is found.
+  // Cookie 存在时，首屏只显示恢复提示；完成验证及数据读取后才显示后台。
   try {
     const expiresAt = await storedSessionExpiry();
-    if (!expiresAt) { $('adminPassword').focus({ preventScroll: true }); return; }
+    if (!expiresAt) {
+      document.documentElement.dataset.adminBoot = 'login';
+      $('adminPassword').focus({ preventScroll: true });
+      return;
+    }
     adminKey = isDemo ? 'demo' : '';
     activateSession(expiresAt);
     $('loginBtn').disabled = true;

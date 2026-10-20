@@ -1,7 +1,41 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f8f9f4"><title>食堂预约管理后台</title><link rel="stylesheet" href="./styles.css"></head>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f8f9f4"><title>食堂预约管理后台</title>
+<!-- 首屏渲染前同步判断是否存在尚未过期的登录 Cookie，避免先显示密码框。 -->
+<style>
+  html[data-admin-boot="restoring"] #loginArea { display:none !important; }
+  #adminBootArea { display:none; }
+  html[data-admin-boot="restoring"] #adminBootArea {
+    min-height:100dvh; width:100%; display:flex; align-items:center; justify-content:center;
+    padding:20px; color:#35684c; background:#f8f9f4; font:600 14px/1.6 system-ui,sans-serif;
+  }
+  #adminBootArea .boot-message { background:#fff; border:1px solid #e0e9df;
+    border-radius:18px; padding:23px 32px; box-shadow:0 16px 48px #193d2710; }
+</style>
+<script>
+  (() => {
+    // 此处只做同步的首屏分流；完整的密码指纹校验仍由 admin.js 异步完成。
+    const cookieName = 'sanhua_canteen_admin_v7';
+    let hasValidExpiry = false;
+    try {
+      const pair = document.cookie.split(';').map(x => x.trim()).find(x => x.startsWith(cookieName + '='));
+      if (pair) {
+        const raw = decodeURIComponent(pair.slice(cookieName.length + 1));
+        const pieces = raw.split('.');
+        const expiresAt = Number(pieces[1]);
+        hasValidExpiry = pieces.length === 2 && !!pieces[0] &&
+          Number.isSafeInteger(expiresAt) && expiresAt > Date.now();
+      }
+    } catch { /* Cookie 不可用时显示正常登录页 */ }
+    document.documentElement.dataset.adminBoot = hasValidExpiry ? 'restoring' : 'login';
+  })();
+</script>
+<link rel="stylesheet" href="./styles.css">
+</head>
 <body class="admin-page admin-login-mode">
+<div id="adminBootArea" role="status" aria-live="polite"><div class="boot-message">正在进入管理后台…</div></div>
 <div id="loginArea" class="login-bg">
   <section class="panel login-panel" aria-labelledby="adminLoginTitle">
     <div class="login-icon" aria-hidden="true">🔐</div>
@@ -10,7 +44,7 @@
     <p class="lead login-subtitle">输入密码以管理预约记录、花名册及用餐时段。</p>
     <form id="loginForm">
       <label class="label" for="adminPassword">管理员密码</label>
-      <input id="adminPassword" type="password" autofocus class="control" autocomplete="current-password" placeholder="请输入管理员密码" required>
+      <input id="adminPassword" type="password" class="control" autocomplete="current-password" placeholder="请输入管理员密码" required>
       <button id="loginBtn" class="action" type="submit">登录管理后台</button>
     </form>
     <button class="action ghost hidden" id="demoLoginBtn" style="width:100%;margin-top:10px">🧪 体验管理后台（免密演示）</button>

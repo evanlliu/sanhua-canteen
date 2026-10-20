@@ -23,6 +23,11 @@ export function normalMeal(m) {
     start: m?.start || '11:30', end: m?.end || '14:00', enabled: m?.enabled === true,
   };
 }
+// Booking is available only DURING the configured meal window (start inclusive, end exclusive).
+// HH:mm strings are zero-padded in admin settings, allowing lexical comparison.
+export function canBookMeal(meal, today, mealDate, nowTime) {
+  return Boolean(meal?.enabled) && mealDate === today && nowTime >= meal.start && nowTime < meal.end;
+}
 export function mealIcon(id) { return PRESET[id]?.icon || '🍽️'; }
 export function reservationMeal(r, meals = [], lang = 'zh') {
   // Snapshot is retained when a meal is removed or renamed.

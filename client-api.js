@@ -1,5 +1,5 @@
 import { githubApi } from './github-store.js';
-import { normalMeal } from './meal-schema.js';
+import { normalMeal, canBookMeal } from './meal-schema.js';
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const KEY = 'evan-canteen-local-demo-v1';
 const initialState = {
@@ -62,7 +62,9 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
     if (!m?.enabled) bad('此餐次尚未开放');
     const { today, nowTime } = localClock(db.settings.timeZone);
     if (date !== today) bad('仅允许预约当天用餐，请刷新页面后重试');
-    if (date === today && nowTime >= m.end) bad('该餐次今日已结束');
+    if (nowTime < m.start) bad('尚未到该餐次的预约时间');
+    if (nowTime >= m.end) bad('该餐次今日已结束');
+    if (!canBookMeal(m, today, date, nowTime)) bad('当前不在该餐次的预约时段');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealId === mealId)) bad('此员工已预约当天该餐次，每餐只能预约一次');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealStart < m.end && m.start < x.mealEnd)) bad('该员工在重叠的用餐时段已预约，不能重复预约');
     const id = 'C' + Array.from(crypto.getRandomValues(new Uint8Array(5)), n => n.toString(16).padStart(2, '0')).join('').toUpperCase();

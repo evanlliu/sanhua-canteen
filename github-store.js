@@ -5,7 +5,7 @@
  * Use disposable test credentials and fictitious employee data ONLY.
  */
 import { decryptGitHubToken } from './token-obfuscation.js';
-import { normalMeal, mealName } from './meal-schema.js';
+import { normalMeal, mealName, canBookMeal } from './meal-schema.js';
 const defaultMeals = [
   { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
   { id: 'lunch', label: '午餐', start: '11:30', end: '14:00', enabled: true },
@@ -210,7 +210,9 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
       if (date !== today) fail('仅允许预约当天用餐，请刷新页面后重试');
       const meal = data.settings.meals.find(m => m.id === mealId);
       if (!meal?.enabled) fail('此餐次暂未开放预约');
+      if (nowTime < meal.start) fail('尚未到该餐次的预约时间');
       if (nowTime >= meal.end) fail('今天该餐次已结束');
+      if (!canBookMeal(meal, today, date, nowTime)) fail('当前不在该餐次的预约时段');
       if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealId === mealId)) fail('此员工当天该餐次已预约，不能重复预约', 409);
       if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealStart < meal.end && meal.start < r.mealEnd)) fail('该员工在重叠的用餐时段已预约，不能重复预约', 409);
       let id = newCode(); while (data.reservations.some(r => r.id === id)) id = newCode();

@@ -1,5 +1,5 @@
 import { api, isDemo, html, localClock } from './client-api.js';
-import { normalMeal, mealName, mealIcon, reservationMeal } from './meal-schema.js';
+import { normalMeal, mealName, mealIcon, reservationMeal, canBookMeal } from './meal-schema.js';
 import { LANGUAGES, translate, detectDeviceLanguage } from './i18n.js';
 const $ = id => document.getElementById(id);
 const employeeInput = $('employeeInput'), dropdown = $('employeeDropdown'), dateInput = $('mealDate');
@@ -11,6 +11,7 @@ function errorText(error) {
   const raw = String(error?.message || '');
   if (/重复预约|已预约|不能重复|重叠/.test(raw)) return tr('errDuplicate');
   if (/仅允许预约当天|预约日期不在允许范围|不在允许预约的日期/.test(raw)) return tr('errDay');
+  if (/尚未到该餐次的预约时间|当前不在该餐次的预约时段/.test(raw)) return tr('errNotStarted');
   if (/暂未开放|尚未开放/.test(raw)) return tr('errClosed');
   if (/餐次今日已结束|该餐次已结束|该餐次今日已结束/.test(raw)) return tr('errEnded');
   if (/不在花名册/.test(raw)) return tr('errUnknown');
@@ -88,10 +89,9 @@ function renderMeals() {
   const grid = $('mealsGrid');
   if (!state) return;
   const { today, nowTime } = localClock(state.settings.timeZone);
-  // Never display disabled meals or meals whose configured end time has passed.
-  // The same enabled/end-time rules are checked again by the GitHub API on submit.
+  // Only show meals whose configured start <= now < end. The write API rechecks.
   const availableMeals = state.settings.meals.map(normalMeal).filter(meal =>
-    meal.enabled && dateInput.value === today && nowTime < meal.end
+    canBookMeal(meal, today, dateInput.dataset.date, nowTime)
   );
   if (!availableMeals.length) {
     grid.innerHTML = `<div class="panel meals-empty" role="status">${html(tr('noAvailableMeals'))}</div>`;
@@ -104,13 +104,19 @@ function renderMeals() {
 }
 function openReserve(mealId) {
   if (!selected) { toast(tr('chooseEmployee')); employeeInput.focus(); return; }
-  if (!dateInput.value) { toast(tr('dateInvalid')); return; }
+  if (!dateInput.dataset.date) { toast(tr('dateInvalid')); return; }
   const meal = state?.settings.meals.find(m => m.id === mealId);
+  const { today, nowTime } = localClock(state.settings.timeZone);
   if (!meal?.enabled) return;
-  pending = { employeeId: selected.employeeId, mealId, date: dateInput.value };
+  if (!canBookMeal(meal, today, dateInput.dataset.date, nowTime)) {
+    toast(nowTime < meal.start ? tr('errNotStarted') : nowTime >= meal.end ? tr('errEnded') : tr('errDay'));
+    renderMeals();
+    return;
+  }
+  pending = { employeeId: selected.employeeId, mealId, date: dateInput.dataset.date };
   $('modalEmoji').textContent = mealIcon(mealId); $('modalTitle').textContent = tr('confirmTitle', {meal:mealName(meal,lang)});
   $('modalText').textContent = tr('confirmDesc');
-  $('modalDetail').innerHTML = `${html(tr('name'))}: <strong>${html(selected.name)}</strong><br>${html(tr('staffNumber'))}: <strong>${html(selected.employeeId)}</strong><br>${html(tr('date'))}: <strong>${html(dateInput.value)}</strong><br>${html(tr('time'))}: <strong>${html(meal.start)} – ${html(meal.end)}</strong>`;
+  $('modalDetail').innerHTML = `${html(tr('name'))}: <strong>${html(selected.name)}</strong><br>${html(tr('staffNumber'))}: <strong>${html(selected.employeeId)}</strong><br>${html(tr('date'))}: <strong>${html(dateInput.dataset.date)}</strong><br>${html(tr('time'))}: <strong>${html(meal.start)} – ${html(meal.end)}</strong>`;
   $('modalStatus').textContent = ''; $('modalStatus').classList.remove('error'); $('confirmBtn').textContent = tr('confirm'); $('confirmBtn').disabled = false; $('confirmBtn').onclick = submitReservation; $('cancelBtn').textContent = tr('goBack');
   $('reserveModal').classList.add('on'); $('reserveModal').setAttribute('aria-hidden', 'false'); $('confirmBtn').focus();
 }
@@ -180,16 +186,18 @@ async function init() {
   employeeInput.focus();
   try {
     state = await api('/api/config');
-    dateInput.value = state.today;
-    renderMeals();
-    // Keep today's date and visible meal availability in sync when time passes,
-    // including when a tab stays open across midnight.
+    // Display wall-clock time in the configured canteen timezone, without allowing editing.
+    // Booking payloads continue to send the canonical yyyy-MM-dd date only.
     const updateAvailability = () => {
       const clock = localClock(state.settings.timeZone);
-      if (dateInput.value !== clock.today) dateInput.value = clock.today;
+      const stamp = `${clock.today} ${clock.nowTime}`;
+      if (dateInput.value === stamp && dateInput.dataset.date === clock.today) return;
+      dateInput.dataset.date = clock.today;
+      dateInput.value = stamp;
       renderMeals();
     };
-    setInterval(updateAvailability, 30_000);
+    updateAvailability();
+    setInterval(updateAvailability, 10_000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) updateAvailability();
     });

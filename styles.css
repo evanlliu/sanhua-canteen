@@ -123,3 +123,15 @@ body.admin-login-mode{height:100dvh;min-height:100vh;display:flex;flex-direction
 body.admin-login-mode > .admin-actions-bar{display:none;}
 body.admin-login-mode .login-bg{min-height:100dvh;}
 @media(max-height:600px){body.admin-login-mode .login-bg{min-height:100dvh;}}
+
+/* V8: Admin dashboard title and logout share one compact top row. */
+.admin-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;gap:14px;padding:23px 0 20px}
+.admin-heading h1{font-size:32px;line-height:1.2;margin:0;white-space:nowrap}
+.admin-heading-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;white-space:nowrap}
+.admin-heading > #logoutBtn{flex:none;white-space:nowrap}
+@media(max-width:600px){
+  .admin-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title logout" "tools tools";column-gap:10px;row-gap:10px;padding:18px 0 16px}
+  .admin-heading h1{grid-area:title;font-size:27px;min-width:0}
+  .admin-heading-tools{grid-area:tools;justify-self:end;margin:0;flex-wrap:wrap}
+  .admin-heading > #logoutBtn{grid-area:logout}
+}

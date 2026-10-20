@@ -7,6 +7,7 @@
 import { decryptGitHubToken } from './token-obfuscation.js';
 import { normalMeal, mealName, canBookMeal } from './meal-schema.js';
 import { searchEmployees } from './employee-search.js';
+import { validPlant, reservationCode, validReservationCode } from './plant-schema.js';
 const defaultMeals = [
   { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
   { id: 'lunch', label: '午餐', start: '11:30', end: '14:00', enabled: true },
@@ -93,12 +94,16 @@ async function read(token) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) fail('data.json 的根节点必须为对象');
   data.settings = { ...defaultSettings, ...data.settings, maxAdvanceDays: 0, meals: (Array.isArray(data.settings?.meals) ? data.settings.meals : defaultMeals).map(normalMeal) };
   data.employees = Array.isArray(data.employees) ? data.employees : [];
+  data.rosterColumns = Array.isArray(data.rosterColumns) ? data.rosterColumns : [];
   data.reservations = Array.isArray(data.reservations) ? data.reservations : [];
   return { data, sha: result.sha };
 }
 async function write(token, data, sha, description) {
   const cfg = config();
-  const payload = JSON.stringify(data, null, 2) + '\n';
+  let payload = JSON.stringify(data, null, 2) + '\n';
+  // A full 19-column, 1441-person roster is large. Compact before nearing the
+  // 1MB GitHub Contents API embedded-content response ceiling.
+  if (new TextEncoder().encode(payload).length > 800000) payload = JSON.stringify(data) + '\n';
   if (new TextEncoder().encode(payload).length > 900000) fail('预约数据已超过 900KB，请备份归档后继续使用');
   return ghFetch(ghUrl(cfg), {
     method: 'PUT', headers: { ...headers(token), 'Content-Type': 'application/json' },
@@ -157,20 +162,31 @@ function cleanSettings(obj) {
   });
   return { timeZone, maxAdvanceDays: 0, meals };
 }
-function cleanEmployees(rows) {
+function cleanColumns(columns) {
+  if (!Array.isArray(columns) || columns.length < 2 || columns.length > 64) fail('花名册列数必须在 2～64 列之间');
+  const seen = new Set();
+  return columns.map((value, i) => {
+    const name = String(value ?? '');
+    if (!name.trim() || name.length > 128 || seen.has(name)) fail(`第 ${i + 1} 列名称为空、重复或过长`);
+    seen.add(name);
+    return name;
+  });
+}
+function cleanEmployees(rows, columns = []) {
   if (!Array.isArray(rows) || rows.length < 1 || rows.length > 15000) fail('花名册必须有 1～15000 位员工');
   const seen = new Set();
   return rows.map((row, i) => {
-    const employeeId = String(row?.employeeId || '').trim();
-    const name = String(row?.name || '').trim();
+    const employeeId = String(row?.employeeId ?? '').trim();
+    const name = String(row?.name ?? '').trim();
     if (!/^\d{1,24}$/.test(employeeId)) fail(`第 ${i + 1} 行员工工号无效`);
     if (!name || name.length > 80) fail(`第 ${i + 1} 行员工姓名无效`);
     if (seen.has(employeeId)) fail('Excel 中存在重复工号：' + employeeId);
     seen.add(employeeId);
-    return { employeeId, name };
+    const values = columns.length ? row?.values : undefined;
+    if (columns.length && (!Array.isArray(values) || values.length !== columns.length)) fail(`第 ${i + 1} 行资料列数不一致`);
+    return columns.length ? { employeeId, name, values: values.map(v => String(v ?? '').slice(0, 2000)) } : { employeeId, name };
   });
 }
-function newCode() { return 'C' + Array.from(crypto.getRandomValues(new Uint8Array(5)), n => n.toString(16).padStart(2, '0')).join('').toUpperCase(); }
 const byDate = rows => [...rows].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)));
 export async function githubApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   const url = new URL(path, 'https://canteen.invalid');
@@ -182,7 +198,7 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
   if (p === '/api/employees/search' && method === 'GET') {
     const q = url.searchParams.get('q') || '';
     const { data } = await read(token);
-    return { employees: searchEmployees(data.employees, q) };
+    return { employees: searchEmployees(data.employees, q).map(({ employeeId, name }) => ({ employeeId, name })) };
   }
   if (p === '/api/reservations/my' && method === 'GET') {
     const id = (url.searchParams.get('employeeId') || '').trim();
@@ -192,7 +208,8 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
   }
   if (p === '/api/reservations' && method === 'POST') {
     const employeeId = String(body?.employeeId || '').trim();
-    const date = String(body?.date || ''), mealId = String(body?.mealId || '');
+    const date = String(body?.date || ''), mealId = String(body?.mealId || ''), plant = String(body?.plant || '');
+    if (!validPlant(plant)) fail('请选择 Plant D / G / B / H');
     if (!/^\d{1,24}$/.test(employeeId) || !validDate(date) || !/^[a-z][a-z0-9_-]{0,39}$/.test(mealId)) fail('员工、用餐日期或餐次无效');
     return mutate(token, `reserve ${mealId} ${date}`, data => {
       const e = data.employees.find(e => String(e.employeeId) === employeeId);
@@ -206,8 +223,8 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
       if (!canBookMeal(meal, today, date, nowTime)) fail('当前不在该餐次的预约时段');
       if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealId === mealId)) fail('此员工当天该餐次已预约，不能重复预约', 409);
       if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealStart < meal.end && meal.start < r.mealEnd)) fail('该员工在重叠的用餐时段已预约，不能重复预约', 409);
-      let id = newCode(); while (data.reservations.some(r => r.id === id)) id = newCode();
-      const reservation = { id, employeeId, employeeName: e.name, mealId, date,
+      let id = reservationCode(plant); while (data.reservations.some(r => r.id === id)) id = reservationCode(plant);
+      const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date,
         mealStart: meal.start, mealEnd: meal.end, mealNameZh: mealName(meal, 'zh'), mealNameEn: mealName(meal, 'en'), mealNameEs: mealName(meal, 'es'), createdAt: new Date().toISOString() };
       data.reservations.push(reservation);
       return { reservation };
@@ -220,11 +237,14 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
   }
   if (p === '/api/admin/import-roster' && method === 'POST') {
     if (!['merge', 'replace'].includes(body?.mode)) fail('导入方式无效');
-    const employees = cleanEmployees(body.employees);
+    const columns = cleanColumns(body.columns || ['工号', '姓名']);
+    const employees = cleanEmployees(body.employees, columns);
     return mutate(token, `roster ${body.mode}`, data => {
       const oldCount = data.employees.length;
-      if (body.mode === 'replace') data.employees = employees;
+      if (body.mode === 'replace') { data.employees = employees; data.rosterColumns = columns; }
       else {
+        if (data.rosterColumns?.length && JSON.stringify(data.rosterColumns) !== JSON.stringify(columns)) fail('花名册列名或顺序已变化，请选择全量覆盖以避免列数据错位');
+        data.rosterColumns = columns;
         const merged = new Map(data.employees.map(e => [e.employeeId, e]));
         for (const e of employees) merged.set(e.employeeId, e);
         data.employees = [...merged.values()];
@@ -238,7 +258,7 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
   }
   if (p.startsWith('/api/admin/reservations/') && method === 'DELETE') {
     const id = decodeURIComponent(p.split('/').pop()).trim().toUpperCase();
-    if (!/^C[A-F0-9]{10}$/.test(id)) fail('预约编号无效');
+    if (!validReservationCode(id)) fail('预约编号无效');
     return mutate(token, `delete ${id}`, data => {
       const index = data.reservations.findIndex(r => r.id === id);
       if (index < 0) fail('该预约已不存在', 404);

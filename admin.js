@@ -2,7 +2,7 @@ import { api, isDemo, html, mealTitle, formatTime } from './client-api.js';
 import { readXlsxRows } from './xlsx-reader.js';
 import { normalMeal, mealName, mealIcon, reservationMeal } from './meal-schema.js';
 const $ = id => document.getElementById(id);
-let adminKey = '', db = null, rosterFileRows = null, busy = false;
+let adminKey = '', db = null, rosterFileRows = null, rosterFileColumns = null, busy = false;
 let filtered = [];
 // This cookie is only a temporary client-side login convenience; it is NOT server-side authorization.
 const ADMIN_COOKIE = 'sanhua_canteen_admin_v7';
@@ -157,19 +157,19 @@ function renderBookings() {
   const tbody = $('reservationTbody'), mobile = $('reservationMobile');
   tbody.replaceChildren(); mobile.replaceChildren();
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="admin-empty">暂无符合条件的预约记录</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="admin-empty">暂无符合条件的预约记录</td></tr>';
     mobile.innerHTML = '<div class="admin-empty">暂无符合条件的预约记录</div>'; return;
   }
   for (const row of filtered) {
     const tr = document.createElement('tr');
-    for (const [val, klass] of [[row.id, 'id-cell'], [row.employeeId, ''], [row.employeeName, ''], [displayMeal(row), ''], [row.date, ''], [`${row.mealStart} – ${row.mealEnd}`, ''], [formatTime(row.createdAt), '']]) {
+    for (const [val, klass] of [[row.id, 'id-cell'], [row.employeeId, ''], [row.employeeName, ''], [displayMeal(row), ''], [row.plant ? `Plant ${row.plant}` : '—', ''], [row.date, ''], [`${row.mealStart} – ${row.mealEnd}`, ''], [formatTime(row.createdAt), '']]) {
       const td = document.createElement('td'); td.textContent = val ?? ''; if (klass) td.className = klass; tr.append(td);
     }
     const action = document.createElement('td'), del = document.createElement('button');
     del.className = 'action danger small'; del.textContent = '删除'; del.disabled = busy;
     del.addEventListener('click', () => removeBooking(row)); action.append(del); tr.append(action); tbody.append(tr);
     const card = document.createElement('article'); card.className = 'admin-entry';
-    card.innerHTML = `<div class="item-head"><strong>${html(row.employeeName)} · ${html(displayMeal(row))}</strong><span class="id-cell">#${html(row.id)}</span></div><div class="item-meta">工号 ${html(row.employeeId)}<br>用餐 ${html(row.date)} · ${html(row.mealStart)}–${html(row.mealEnd)}<br>提交于 ${html(formatTime(row.createdAt))}</div>`;
+    card.innerHTML = `<div class="item-head"><strong>${html(row.employeeName)} · ${html(displayMeal(row))}</strong><span class="id-cell">#${html(row.id)}</span></div><div class="item-meta">工号 ${html(row.employeeId)}<br>${row.plant ? html('Plant ' + row.plant) + '<br>' : ''}用餐 ${html(row.date)} · ${html(row.mealStart)}–${html(row.mealEnd)}<br>提交于 ${html(formatTime(row.createdAt))}</div>`;
     const d = del.cloneNode(true); d.addEventListener('click', () => removeBooking(row)); card.append(d); mobile.append(card);
   }
 }
@@ -187,13 +187,38 @@ function renderRoster() {
   const subset = db.employees.filter(e => e.employeeId.includes(term) || e.name.toLowerCase().includes(term));
   $('rosterCount').textContent = `当前 ${db.employees.length} 位员工，匹配 ${subset.length} 位`;
   const tbody = $('rosterTbody'); tbody.replaceChildren();
-  if (!subset.length) { tbody.innerHTML = '<tr><td colspan="2" class="admin-empty">没有匹配的员工</td></tr>'; }
+  if (!subset.length) { tbody.innerHTML = '<tr><td colspan="3"' class="admin-empty">没有匹配的员工</td></tr>'; }
   for (const e of subset.slice(0, 100)) {
     const tr = document.createElement('tr');
     for (const val of [e.employeeId, e.name]) { const td = document.createElement('td'); td.textContent = val; tr.append(td); }
+    const td = document.createElement('td'), detail = document.createElement('button'); detail.type='button'; detail.className='action secondary small'; detail.textContent='查看'; detail.onclick=()=>showRosterDetails(e); td.append(detail); tr.append(td);
     tbody.append(tr);
   }
   $('rosterNote').textContent = subset.length > 100 ? '为保证页面流畅，仅显示前 100 条，请使用搜索框缩小范围。' : '';
+}
+function rosterValues(employee, columns) {
+  if (Array.isArray(employee.values) && employee.values.length === columns.length) return employee.values;
+  return columns.map(column => /^(id|员工工号|工号)$/i.test(column.trim()) ? employee.employeeId : /^(name|员工姓名|姓名)$/i.test(column.trim()) ? employee.name : '');
+}
+function showRosterDetails(employee) {
+  const columns = db.rosterColumns?.length ? db.rosterColumns : ['工号','姓名'];
+  const values = rosterValues(employee, columns);
+  $('rosterDetailTitle').textContent = `${employee.name}（${employee.employeeId}）`;
+  const container = $('rosterDetailRows'); container.replaceChildren();
+  columns.forEach((column, i) => { const row=document.createElement('div'); row.className='roster-detail-row';
+    const title=document.createElement('strong'); title.textContent=column;
+    const value=document.createElement('span'); value.textContent=String(values[i]??'');
+    row.append(title,value); container.append(row); });
+  $('rosterDetailDialog').showModal();
+}
+function exportRosterCSV() {
+  if (!db) return;
+  const columns = db.rosterColumns?.length ? db.rosterColumns : ['工号','姓名'];
+  const rows = [columns, ...db.employees.map(e => rosterValues(e,columns))];
+  const csv='\uFEFF'+rows.map(r=>r.map(csvSafe).join(',')).join('\r\n');
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  const link=document.createElement('a'); link.href=url; link.download=`员工花名册_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
 function collectMealCards() {
   return [...document.querySelectorAll('#configCards [data-id]')].map(el => ({
@@ -412,10 +437,12 @@ async function ensureXlsx() {
 function parseEmployees(rows) {
   if (!rows.length) throw new Error('文件没有内容');
   const canonical = v => String(v ?? '').replace(/\uFEFF/g, '').trim().replace(/[\s_\-]/g, '').toLowerCase();
-  const headers = rows[0].map(canonical);
+  const originalHeaders = rows[0].map(v => String(v ?? ''));
+  const headers = originalHeaders.map(canonical);
   const idIndex = headers.findIndex(t => ['工号', '员工工号', 'employeeid', 'id', 'númerodeempleado', 'numeroempleado'].includes(t));
   const nameIndex = headers.findIndex(t => ['姓名', '员工姓名', 'name', 'nombre', 'employeename'].includes(t));
-  if (idIndex < 0 || nameIndex < 0) throw new Error('第一行必须包含“工号”和“姓名”表头');
+  if (idIndex < 0 || nameIndex < 0) throw new Error('第一行必须包含 ID/Name 或 工号/姓名 表头');
+  if (new Set(originalHeaders).size !== originalHeaders.length || originalHeaders.some(x=>!x.trim())) throw new Error('花名册存在空列名或重复列名，请修复后导入');
   const seen = new Set(), employees = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] || [];
@@ -424,15 +451,25 @@ function parseEmployees(rows) {
     if (!/^\d{1,24}$/.test(employeeId)) throw new Error(`Excel 第 ${i + 1} 行：工号必须为纯数字，无法使用科学计数法`);
     if (!name || name.length > 80) throw new Error(`Excel 第 ${i + 1} 行：姓名为空或超过 80 字`);
     if (seen.has(employeeId)) throw new Error(`Excel 第 ${i + 1} 行：工号 ${employeeId} 在文件中重复`);
-    seen.add(employeeId); employees.push({ employeeId, name });
+    const values = originalHeaders.map((header,j) => {
+      const value = String(row[j] ?? '');
+      // The lightweight XLSX reader retains numeric Excel serials. Display
+      // Hiring Date as an ISO calendar date instead of an opaque five-digit code.
+      if (/^hiring\s*date$/i.test(header.trim()) && /^\d{4,5}$/.test(value)) {
+        const date = new Date(Date.UTC(1899,11,30) + Number(value)*86400000);
+        if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0,10);
+      }
+      return value;
+    });
+    seen.add(employeeId); employees.push({ employeeId, name, values });
   }
   if (!employees.length) throw new Error('没有有效的员工资料');
   if (employees.length > 15000) throw new Error('一次最多导入 15000 名员工');
-  return employees;
+  return { employees, columns: originalHeaders };
 }
 async function readFile() {
   const file = $('rosterFile').files?.[0]; if (!file) return;
-  rosterFileRows = null; $('importBtn').disabled = true; $('filePreview').classList.add('hidden');
+  rosterFileRows = null; rosterFileColumns = null; $('importBtn').disabled = true; $('filePreview').classList.add('hidden');
   $('fileInfo').textContent = `读取中：${file.name}`; message('importStatus');
   try {
     let rows;
@@ -444,7 +481,7 @@ async function readFile() {
       if (!book.SheetNames?.length) throw new Error('Excel 没有工作表');
       rows = window.XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1, raw: false, defval: '' });
     } else throw new Error('请选择 .xlsx、.xls 或 .csv 格式文件');
-    rosterFileRows = parseEmployees(rows);
+    const parsed = parseEmployees(rows); rosterFileRows = parsed.employees; rosterFileColumns = parsed.columns;
     $('fileInfo').textContent = `✓ ${file.name} · 检查通过，共 ${rosterFileRows.length} 位员工`;
     $('filePreviewBody').innerHTML = rosterFileRows.slice(0, 5).map(e => `<tr><td>${html(e.employeeId)}</td><td>${html(e.name)}</td></tr>`).join('');
     $('filePreview').classList.remove('hidden'); $('importBtn').disabled = false;
@@ -457,7 +494,7 @@ async function importRoster() {
   if (mode === 'merge' && !confirm(`确认合并导入 ${rosterFileRows.length} 条员工记录吗？同工号员工的姓名会更新。`)) return;
   busy = true; $('importBtn').disabled = true; message('importStatus', '正在上传及更新花名册…');
   try {
-    const result = await authApi('/api/admin/import-roster', { method: 'POST', body: { mode, employees: rosterFileRows } });
+    const result = await authApi('/api/admin/import-roster', { method: 'POST', body: { mode, columns: rosterFileColumns, employees: rosterFileRows } });
     await refresh(); message('importStatus', `✓ 导入成功：本次 ${result.imported} 人，花名册现有 ${result.total} 人。`);
   } catch (error) { onError(error, 'importStatus'); }
   finally { busy = false; $('importBtn').disabled = !rosterFileRows; }
@@ -469,8 +506,8 @@ function csvSafe(v) {
 }
 function exportCSV() {
   if (!db) return;
-  const data = [['预约号', '员工工号', '员工姓名', '餐次', '用餐日期', '开始时间', '结束时间', '预约提交时间'],
-    ...filtered.map(r => [r.id, r.employeeId, r.employeeName, displayMeal(r), r.date, r.mealStart, r.mealEnd, formatTime(r.createdAt)])];
+  const data = [['预约号', '员工工号', '员工姓名', '餐次', 'Plant', '用餐日期', '开始时间', '结束时间', '预约提交时间'],
+    ...filtered.map(r => [r.id, r.employeeId, r.employeeName, displayMeal(r), r.plant ? 'Plant '+r.plant : '', r.date, r.mealStart, r.mealEnd, formatTime(r.createdAt)])];
   const csv = '\uFEFF' + data.map(r => r.map(csvSafe).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const link = document.createElement('a'), url = URL.createObjectURL(blob);
@@ -492,6 +529,8 @@ function init() {
   $('resetFilterBtn').onclick = () => { ['fKeyword', 'fDate', 'fEmployeeId', 'fMeal'].forEach(id => $(id).value = ''); renderBookings(); };
   $('exportBtn').onclick = exportCSV;
   $('rosterFilter').oninput = renderRoster;
+  $('exportRosterBtn').onclick = exportRosterCSV;
+  $('closeRosterDetail').onclick = () => $('rosterDetailDialog').close();
   $('rosterFile').onchange = readFile;
   $('importBtn').onclick = importRoster;
   $('saveSettingsBtn').onclick = saveSettings;

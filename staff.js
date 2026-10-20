@@ -1,6 +1,7 @@
 import { api, isDemo, html, localClock } from './client-api.js';
 import { normalMeal, mealName, mealIcon, reservationMeal, canBookMeal, mealAvailability } from './meal-schema.js';
 import { LANGUAGES, translate, detectDeviceLanguage } from './i18n.js';
+import { plantLabel, validPlant } from './plant-schema.js';
 const $ = id => document.getElementById(id);
 const employeeInput = $('employeeInput'), dropdown = $('employeeDropdown'), dateInput = $('mealDate');
 let lang = detectDeviceLanguage(navigator.languages?.length ? navigator.languages : [navigator.language]);
@@ -14,6 +15,7 @@ function errorText(error) {
   if (/尚未到该餐次的预约时间|当前不在该餐次的预约时段/.test(raw)) return tr('errNotStarted');
   if (/暂未开放|尚未开放/.test(raw)) return tr('errClosed');
   if (/餐次今日已结束|该餐次已结束|该餐次今日已结束/.test(raw)) return tr('errEnded');
+  if (/请选择 Plant|Plant 无效/.test(raw)) return tr('choosePlant');
   if (/不在花名册/.test(raw)) return tr('errUnknown');
   return raw || tr('error');
 }
@@ -110,6 +112,8 @@ function renderMeals() {
 function openReserve(mealId) {
   if (!selected) { toast(tr('chooseEmployee')); employeeInput.focus(); return; }
   if (!dateInput.dataset.date) { toast(tr('dateInvalid')); return; }
+  const plant = $('plantSelect').value;
+  if (!validPlant(plant)) { toast(tr('choosePlant')); $('plantSelect').focus(); return; }
   const meal = state?.settings.meals.find(m => m.id === mealId);
   const { today, nowTime } = localClock(state.settings.timeZone);
   if (!meal?.enabled) return;
@@ -118,10 +122,10 @@ function openReserve(mealId) {
     renderMeals();
     return;
   }
-  pending = { employeeId: selected.employeeId, mealId, date: dateInput.dataset.date };
+  pending = { employeeId: selected.employeeId, mealId, date: dateInput.dataset.date, plant };
   $('modalEmoji').textContent = mealIcon(mealId); $('modalTitle').textContent = tr('confirmTitle', {meal:mealName(meal,lang)});
   $('modalText').textContent = tr('confirmDesc');
-  $('modalDetail').innerHTML = `${html(tr('name'))}: <strong>${html(selected.name)}</strong><br>${html(tr('staffNumber'))}: <strong>${html(selected.employeeId)}</strong><br>${html(tr('date'))}: <strong>${html(dateInput.dataset.date)}</strong><br>${html(tr('time'))}: <strong>${html(meal.start)} – ${html(meal.end)}</strong>`;
+  $('modalDetail').innerHTML = `${html(tr('name'))}: <strong>${html(selected.name)}</strong><br>${html(tr('staffNumber'))}: <strong>${html(selected.employeeId)}</strong><br>${html(tr('date'))}: <strong>${html(dateInput.dataset.date)}</strong><br>${html(tr('time'))}: <strong>${html(meal.start)} – ${html(meal.end)}</strong><br>${html(tr('plantLabel'))}: <strong>${html(plantLabel(plant))}</strong>`;
   $('modalStatus').textContent = ''; $('modalStatus').classList.remove('error'); $('confirmBtn').textContent = tr('confirm'); $('confirmBtn').disabled = false; $('confirmBtn').onclick = submitReservation; $('cancelBtn').textContent = tr('goBack');
   $('reserveModal').classList.add('on'); $('reserveModal').setAttribute('aria-hidden', 'false'); $('confirmBtn').focus();
 }
@@ -135,7 +139,7 @@ async function submitReservation() {
     const r = result.reservation;
     $('modalTitle').textContent = tr('successTitle'); $('modalEmoji').textContent = '✅';
     $('modalText').textContent = tr('successDesc');
-    $('modalDetail').innerHTML = `${html(tr('reservationNumber'))}<br><strong style="font-size:30px;letter-spacing:2px">${html(r.id)}</strong><br>${html(r.date)} · ${html(reservationMeal(r,state.settings.meals,lang))} · ${html(r.mealStart)}–${html(r.mealEnd)}`;
+    $('modalDetail').innerHTML = `${html(tr('reservationNumber'))}<br><strong style="font-size:30px;letter-spacing:2px">${html(r.id)}</strong><br>${html(r.date)} · ${html(reservationMeal(r,state.settings.meals,lang))} · ${html(r.mealStart)}–${html(r.mealEnd)} · ${html(plantLabel(r.plant))}`;
     $('confirmBtn').textContent = tr('myReservations'); $('confirmBtn').disabled = false;
     $('cancelBtn').textContent = tr('close'); $('cancelBtn').disabled = false;
     $('confirmBtn').onclick = () => { loading = false; closeReserve(); $('lookupEmployeeId').value = r.employeeId; lookup(); jumpToLookup(); };
@@ -145,7 +149,7 @@ async function submitReservation() {
 }
 function renderReservationList(rows) {
   const result = $('reservationList');
-  result.innerHTML = rows.map(r => `<article class="res-item"><div><strong>${html(r.date)} · ${html(reservationMeal(r,state?.settings.meals||[],lang))}</strong><small>${html(r.employeeName)} · ${html(tr('staffNumber'))} ${html(r.employeeId)}<br>⏱ ${html(r.mealStart)}–${html(r.mealEnd)} · ${html(tr('booked'))}</small></div><div class="code">#${html(r.id)}</div></article>`).join('');
+  result.innerHTML = rows.map(r => `<article class="res-item"><div><strong>${html(r.date)} · ${html(reservationMeal(r,state?.settings.meals||[],lang))}</strong><small>${html(r.employeeName)} · ${html(tr('staffNumber'))} ${html(r.employeeId)}<br>⏱ ${html(r.mealStart)}–${html(r.mealEnd)} · ${html(plantLabel(r.plant))} · ${html(tr('booked'))}</small></div><div class="code">#${html(r.id)}</div></article>`).join('');
   $('lookupStatus').textContent = rows.length ? tr('found',{count:rows.length}) : tr('notFound');
 }
 async function lookup() {

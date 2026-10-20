@@ -1,6 +1,7 @@
 export const LANGUAGES = ['zh', 'en', 'es'];
 export const DICT = {
   zh: {
+    plantLabel:'选择 Plant',plantPlaceholder:'请选择 Plant',choosePlant:'请先选择 Plant D、G、B 或 H',
     pageTitle:'员工用餐预约',siteName:'员工用餐预约',myReservations:'我的预约',employeeSection:'确认员工信息',employeeHint:'请输入工号并从下拉结果中选择',
     employeeId:'员工工号或姓名',employeePlaceholder:'输入工号或员工姓名',employeeTip:'请从花名册中选择正确的员工。',mealDate:'用餐时间（当天）',todayOnly:'只能预约当天用餐，日期不可修改。',
     chooseMeal:'选择预约餐次',mealRule:'每位员工每天每个餐次限预约一次',loadingMeals:'正在读取餐次设置…',lookupTitle:'查看我的预约',lookupHint:'输入工号查询预约号码',lookupPlaceholder:'输入完整工号查看预约号码',lookupBtn:'查询预约',
@@ -14,6 +15,7 @@ export const DICT = {
     langButton:'🌐 中文 ↻',langTitle:'切换语言：中文 / English / Español',
   },
   en: {
+    plantLabel:'Select plant',plantPlaceholder:'Choose a plant',choosePlant:'Select Plant D, G, B, or H first',
     pageTitle:'Staff Meal Reservations',siteName:'Staff Meal Reservations',myReservations:'My reservations',employeeSection:'Confirm employee',employeeHint:'Enter your employee ID and select a matching result',
     employeeId:'Employee ID or name',employeePlaceholder:'Search by employee ID or name',employeeTip:'Select the correct employee from the roster.',mealDate:'Meal time (today)',todayOnly:'Reservations are available for today only. This date cannot be changed.',
     chooseMeal:'Select a meal',mealRule:'One reservation per employee, per meal, per day',loadingMeals:'Loading meal settings…',lookupTitle:'My reservations',lookupHint:'Enter your ID to find your reservation numbers',lookupPlaceholder:'Enter your full employee ID',lookupBtn:'Search',
@@ -27,6 +29,7 @@ export const DICT = {
     langButton:'🌐 English ↻',langTitle:'Switch language: 中文 / English / Español',
   },
   es: {
+    plantLabel:'Seleccionar planta',plantPlaceholder:'Elige una planta',choosePlant:'Selecciona primero Plant D, G, B o H',
     pageTitle:'Reservas del comedor',siteName:'Reservas del comedor',myReservations:'Mis reservas',employeeSection:'Confirma tus datos',employeeHint:'Ingresa tu número de empleado y selecciónalo de la lista',
     employeeId:'Número o nombre del empleado',employeePlaceholder:'Busca por número o nombre',employeeTip:'Selecciona a la persona correcta del padrón.',mealDate:'Horario de comida (hoy)',todayOnly:'Solo puedes reservar para hoy. No es posible cambiar la fecha.',
     chooseMeal:'Selecciona tu comida',mealRule:'Una reserva por empleado, por comida y por día',loadingMeals:'Cargando horarios…',lookupTitle:'Consultar mis reservas',lookupHint:'Ingresa tu número para ver los folios de reserva',lookupPlaceholder:'Ingresa tu número completo de empleado',lookupBtn:'Consultar',

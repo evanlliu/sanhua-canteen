@@ -149,3 +149,16 @@ body.admin-login-mode .login-bg{min-height:100dvh;}
     font-size:16px;
   }
 }
+
+/* V12 — separate required Plant dropdown; remains full-width on mobile. */
+.fields .plant-field{grid-column:1/-1;max-width:390px}
+.fields .plant-field select{appearance:auto;background:#fcfdfa;font-weight:750}
+@media(max-width:600px){.fields .plant-field{max-width:none}}
+
+/* V12 — viewing all 19 roster columns without an enormous table */
+.roster-dialog{border:1px solid #e2e9df;border-radius:19px;padding:24px;width:min(700px,calc(100% - 32px));max-height:82vh;box-shadow:0 25px 90px #172d2140;color:#223e31}
+.roster-dialog::backdrop{background:#10241ac2}
+.roster-detail-rows{display:grid;gap:0;max-height:62vh;overflow:auto}
+.roster-detail-row{display:grid;grid-template-columns:minmax(145px,1fr) minmax(0,2fr);gap:15px;padding:11px 4px;border-bottom:1px solid #e9eee6;font-size:13px;word-break:break-word}
+.roster-detail-row strong{color:#597566;white-space:pre-wrap}
+@media(max-width:600px){.roster-detail-row{grid-template-columns:1fr;gap:5px}}

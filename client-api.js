@@ -1,6 +1,7 @@
 import { githubApi } from './github-store.js';
 import { normalMeal, canBookMeal } from './meal-schema.js';
 import { searchEmployees } from './employee-search.js';
+import { validPlant, reservationCode } from './plant-schema.js';
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const KEY = 'evan-canteen-local-demo-v1';
 const initialState = {
@@ -12,7 +13,7 @@ const initialState = {
       { id: 'dinner', label: '晚餐', start: '17:30', end: '20:00', enabled: true },
     ],
   },
-  employees: [{ employeeId: '1000000001', name: '测试员工' }], reservations: [],
+  rosterColumns: ['ID', 'Name'], employees: [{ employeeId: '1000000001', name: '测试员工', values: ['1000000001','测试员工'] }], reservations: [],
 };
 export const isDemo = DEMO;
 export function html(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
@@ -44,11 +45,12 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   if (p.startsWith('/api/admin/') && adminKey !== 'demo') bad('演示模式请使用“体验管理后台”按钮');
   if (p === '/api/config') return { settings: { ...db.settings, maxAdvanceDays: 0, meals: db.settings.meals.map(normalMeal) }, ...localClock(db.settings.timeZone) };
   if (p === '/api/employees/search') {
-    return { employees: searchEmployees(db.employees, url.searchParams.get('q') || '') };
+    return { employees: searchEmployees(db.employees, url.searchParams.get('q') || '').map(({ employeeId, name }) => ({ employeeId, name })) };
   }
   if (p === '/api/reservations/my') return { reservations: db.reservations.filter(x => x.employeeId === url.searchParams.get('employeeId')).sort((a, b) => b.date.localeCompare(a.date)) };
   if (p === '/api/reservations' && method === 'POST') {
-    const { employeeId, date, mealId } = body;
+    const { employeeId, date, mealId, plant } = body;
+    if (!validPlant(plant)) bad('请选择 Plant D / G / B / H');
     const e = db.employees.find(x => x.employeeId === employeeId);
     if (!e) bad('工号不在花名册中');
     const m = db.settings.meals.find(x => x.id === mealId);
@@ -60,15 +62,17 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
     if (!canBookMeal(m, today, date, nowTime)) bad('当前不在该餐次的预约时段');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealId === mealId)) bad('此员工已预约当天该餐次，每餐只能预约一次');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealStart < m.end && m.start < x.mealEnd)) bad('该员工在重叠的用餐时段已预约，不能重复预约');
-    const id = 'C' + Array.from(crypto.getRandomValues(new Uint8Array(5)), n => n.toString(16).padStart(2, '0')).join('').toUpperCase();
-    const reservation = { id, employeeId, employeeName: e.name, mealId, date, mealStart: m.start, mealEnd: m.end, mealNameZh: normalMeal(m).nameZh, mealNameEn: normalMeal(m).nameEn, mealNameEs: normalMeal(m).nameEs, createdAt: new Date().toISOString() };
+    const id = reservationCode(plant);
+    const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date, mealStart: m.start, mealEnd: m.end, mealNameZh: normalMeal(m).nameZh, mealNameEn: normalMeal(m).nameEn, mealNameEs: normalMeal(m).nameEs, createdAt: new Date().toISOString() };
     db.reservations.push(reservation); demoSave(db); return { reservation };
   }
   if (p === '/api/admin/dashboard') return { ...db, settings: {...db.settings, maxAdvanceDays: 0, meals: db.settings.meals.map(normalMeal)}, ...localClock(db.settings.timeZone) };
   if (p === '/api/admin/import-roster' && method === 'POST') {
     const oldCount = db.employees.length;
-    if (body.mode === 'replace') db.employees = body.employees;
+    if (body.mode === 'replace') { db.employees = body.employees; db.rosterColumns = body.columns || []; }
     else {
+      if (db.rosterColumns?.length && JSON.stringify(db.rosterColumns) !== JSON.stringify(body.columns)) bad('花名册列名已变化，请选择全量覆盖');
+      db.rosterColumns = body.columns || [];
       const map = new Map(db.employees.map(e => [e.employeeId, e]));
       for (const e of body.employees) map.set(e.employeeId, e);
       db.employees = [...map.values()];

@@ -7,7 +7,7 @@
 import { decryptGitHubToken } from './token-obfuscation.js';
 import { normalMeal, mealName, canBookMeal } from './meal-schema.js';
 import { searchEmployees } from './employee-search.js';
-import { validPlant, reservationCode, validReservationCode } from './plant-schema.js';
+import { validPlant, nextReservationCode, validReservationCode } from './plant-schema.js';
 const defaultMeals = [
   { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
   { id: 'lunch', label: '午餐', start: '11:30', end: '14:00', enabled: true },
@@ -223,7 +223,8 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
       if (!canBookMeal(meal, today, date, nowTime)) fail('当前不在该餐次的预约时段');
       if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealId === mealId)) fail('此员工当天该餐次已预约，不能重复预约', 409);
       if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealStart < meal.end && meal.start < r.mealEnd)) fail('该员工在重叠的用餐时段已预约，不能重复预约', 409);
-      let id = reservationCode(plant); while (data.reservations.some(r => r.id === id)) id = reservationCode(plant);
+      // Allocate within mutate's SHA-guarded retry loop, never reusing deleted numbers.
+      const id = nextReservationCode(data, date, plant);
       const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date,
         mealStart: meal.start, mealEnd: meal.end, mealNameZh: mealName(meal, 'zh'), mealNameEn: mealName(meal, 'en'), mealNameEs: mealName(meal, 'es'), createdAt: new Date().toISOString() };
       data.reservations.push(reservation);

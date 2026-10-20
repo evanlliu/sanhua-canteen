@@ -1,7 +1,7 @@
 import { githubApi } from './github-store.js';
 import { normalMeal, canBookMeal } from './meal-schema.js';
 import { searchEmployees } from './employee-search.js';
-import { validPlant, reservationCode } from './plant-schema.js';
+import { validPlant, nextReservationCode } from './plant-schema.js';
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const KEY = 'evan-canteen-local-demo-v1';
 const initialState = {
@@ -62,7 +62,7 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
     if (!canBookMeal(m, today, date, nowTime)) bad('当前不在该餐次的预约时段');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealId === mealId)) bad('此员工已预约当天该餐次，每餐只能预约一次');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealStart < m.end && m.start < x.mealEnd)) bad('该员工在重叠的用餐时段已预约，不能重复预约');
-    const id = reservationCode(plant);
+    const id = nextReservationCode(db, date, plant);
     const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date, mealStart: m.start, mealEnd: m.end, mealNameZh: normalMeal(m).nameZh, mealNameEn: normalMeal(m).nameEn, mealNameEs: normalMeal(m).nameEs, createdAt: new Date().toISOString() };
     db.reservations.push(reservation); demoSave(db); return { reservation };
   }

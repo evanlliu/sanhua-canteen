@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-20T17:36:54.539Z",
+  "updatedAt": "2026-10-20T18:18:07.281Z",
   "settings": {
     "timeZone": "America/Monterrey",
     "maxAdvanceDays": 0,
@@ -5829,6 +5829,21 @@
       "mealNameEn": "Lunch",
       "mealNameEs": "Almuerzo",
       "createdAt": "2026-10-20T15:22:49.076Z"
+    },
+    {
+      "id": "C1575A06F8C-B",
+      "employeeId": "14",
+      "employeeName": "RODRIGUEZ FLORES ROSA ANGELA MARGARITA",
+      "plant": "B",
+      "mealId": "lunch",
+      "date": "2026-10-20",
+      "mealStart": "08:30",
+      "mealEnd": "14:00",
+      "mealNameZh": "午餐",
+      "mealNameEn": "Lunch",
+      "mealNameEs": "Almuerzo",
+      "createdAt": "2026-10-20T18:18:07.281Z"
     }
-  ]
+  ],
+  "rosterColumns": []
 }

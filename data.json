@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-20T14:59:52.379Z",
+  "updatedAt": "2026-10-20T15:22:49.076Z",
   "settings": {
     "timeZone": "America/Monterrey",
     "maxAdvanceDays": 0,
@@ -5816,6 +5816,19 @@
       "mealNameEn": "Lunch",
       "mealNameEs": "Almuerzo",
       "createdAt": "2026-10-20T14:59:52.379Z"
+    },
+    {
+      "id": "CBC08E8DFBF",
+      "employeeId": "4622",
+      "employeeName": "AGUILAR ROSAS SAYURI MONSERRAT",
+      "mealId": "lunch",
+      "date": "2026-10-20",
+      "mealStart": "08:30",
+      "mealEnd": "14:00",
+      "mealNameZh": "午餐",
+      "mealNameEn": "Lunch",
+      "mealNameEs": "Almuerzo",
+      "createdAt": "2026-10-20T15:22:49.076Z"
     }
   ]
 }

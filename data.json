@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-20T14:59:38.462Z",
+  "updatedAt": "2026-10-20T14:59:52.379Z",
   "settings": {
     "timeZone": "America/Monterrey",
     "maxAdvanceDays": 0,
@@ -5803,5 +5803,19 @@
       "name": "MUÑIZ SALAZAR OMAR ALEJANDRO"
     }
   ],
-  "reservations": []
+  "reservations": [
+    {
+      "id": "C29280E5240",
+      "employeeId": "8264",
+      "employeeName": "CHEN  MIMI",
+      "mealId": "lunch",
+      "date": "2026-10-20",
+      "mealStart": "08:30",
+      "mealEnd": "14:00",
+      "mealNameZh": "午餐",
+      "mealNameEn": "Lunch",
+      "mealNameEs": "Almuerzo",
+      "createdAt": "2026-10-20T14:59:52.379Z"
+    }
+  ]
 }

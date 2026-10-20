@@ -4,9 +4,79 @@ import { normalMeal, mealName, mealIcon, reservationMeal } from './meal-schema.j
 const $ = id => document.getElementById(id);
 let adminKey = '', db = null, rosterFileRows = null, busy = false;
 let filtered = [];
+// This cookie is only a temporary client-side login convenience; it is NOT server-side authorization.
+const ADMIN_COOKIE = 'sanhua_canteen_admin_v7';
+const LOGIN_TTL_MS = 5 * 60 * 60 * 1000;
+let sessionExpiresAt = 0;
+let sessionTimer = null;
+function cookieOptions() {
+  // Scope cookie to this GitHub Pages project instead of other repositories on the same domain.
+  let path = '/';
+  try { path = new URL('./', location.href).pathname; } catch { /* local about:blank demo */ }
+  return `Path=${path}; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+}
+function readLoginCookie() {
+  const pair = document.cookie.split(';').map(s => s.trim()).find(s => s.startsWith(ADMIN_COOKIE + '='));
+  if (!pair) return '';
+  try { return decodeURIComponent(pair.slice(ADMIN_COOKIE.length + 1)); } catch { return ''; }
+}
+function clearLoginCookie() {
+  document.cookie = `${ADMIN_COOKIE}=; ${cookieOptions()}; Max-Age=0`;
+}
+async function passwordFingerprint() {
+  const password = String(window.APP_CONFIG?.github?.adminPassword ?? '').trim();
+  if (!password) return '';
+  // Fingerprint, not a secret signature: public config.js means this can be forged.
+  const bytes = new TextEncoder().encode(`sanhua-canteen:${location.origin}:${password}`);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), x => x.toString(16).padStart(2, '0')).join('');
+}
+async function storedSessionExpiry() {
+  const raw = readLoginCookie();
+  if (!raw) return 0;
+  const [signature, timestamp] = raw.split('.');
+  const expiresAt = Number(timestamp);
+  if (!signature || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() || signature !== await passwordFingerprint()) {
+    clearLoginCookie();
+    return 0;
+  }
+  return expiresAt;
+}
+function activateSession(expiresAt) {
+  sessionExpiresAt = expiresAt;
+  clearTimeout(sessionTimer);
+  sessionTimer = setTimeout(() => {
+    if (sessionExpiresAt && Date.now() >= sessionExpiresAt) {
+      logout();
+      message('loginStatus', '登录已过期，请重新输入密码。', true);
+    }
+  }, Math.max(0, expiresAt - Date.now()));
+}
+async function rememberLogin() {
+  const fingerprint = await passwordFingerprint();
+  if (!fingerprint) return;
+  const expiresAt = Date.now() + LOGIN_TTL_MS;
+  document.cookie = `${ADMIN_COOKIE}=${encodeURIComponent(fingerprint + '.' + expiresAt)}; ${cookieOptions()}; Max-Age=${LOGIN_TTL_MS / 1000}`;
+  activateSession(expiresAt);
+}
+function showDashboard() {
+  $('adminPassword').value = '';
+  $('loginArea').classList.add('hidden');
+  document.body.classList.remove('admin-login-mode');
+  $('dashboardArea').classList.remove('hidden');
+  $('logoutBtn').classList.remove('hidden');
+  message('loginStatus');
+}
+
 function message(id, text = '', error = false) { const e = $(id); e.textContent = text; e.classList.toggle('error', error); }
 function adminAlert(text, error = false) { const e = $('adminAlert'); e.textContent = text; e.classList.remove('hidden'); e.classList.toggle('error', error); }
-function authApi(path, opts = {}) { return api(path, { ...opts, adminKey }); }
+function authApi(path, opts = {}) {
+  if (sessionExpiresAt && Date.now() >= sessionExpiresAt) {
+    logout();
+    return Promise.reject(new Error('登录已过期，请重新输入密码。'));
+  }
+  return api(path, { ...opts, adminKey });
+}
 function onError(error, target = 'adminAlert') {
   const text = error?.message || '操作失败';
   if (target === 'adminAlert') adminAlert(text, true); else message(target, text, true);
@@ -23,18 +93,26 @@ async function login(event) {
   $('loginBtn').disabled = true; message('loginStatus', '正在连接预约数据…');
   try {
     await refresh();
-    $('adminPassword').value = '';
-    $('loginArea').classList.add('hidden');
-    document.body.classList.remove('admin-login-mode');
-    $('dashboardArea').classList.remove('hidden');
-    $('logoutBtn').classList.remove('hidden');
-    message('loginStatus');
+    await rememberLogin();
+    showDashboard();
   } catch (error) {
     adminKey = '';
     message('loginStatus', error.message || '登录失败', true);
   } finally { $('loginBtn').disabled = false; }
 }
-function logout() { adminKey = ''; db = null; $('dashboardArea').classList.add('hidden'); $('loginArea').classList.remove('hidden'); document.body.classList.add('admin-login-mode'); window.scrollTo(0, 0); $('logoutBtn').classList.add('hidden'); $('adminPassword').value = ''; $('adminPassword').focus(); }
+function logout() {
+  adminKey = ''; db = null; sessionExpiresAt = 0;
+  clearTimeout(sessionTimer); sessionTimer = null;
+  clearLoginCookie();
+  $('dashboardArea').classList.add('hidden');
+  $('loginArea').classList.remove('hidden');
+  document.body.classList.add('admin-login-mode');
+  window.scrollTo(0, 0);
+  $('logoutBtn').classList.add('hidden');
+  $('adminPassword').value = '';
+  $('adminPassword').focus({ preventScroll: true });
+}
+
 async function refresh() {
   $('refreshBtn').disabled = true;
   try {
@@ -315,5 +393,24 @@ function init() {
   $('importBtn').onclick = importRoster;
   $('saveSettingsBtn').onclick = saveSettings;
   $('addMealBtn').onclick = addMeal;
+  restoreLogin();
+}
+async function restoreLogin() {
+  // On first load, show the password field until a valid unexpired cookie is found.
+  try {
+    const expiresAt = await storedSessionExpiry();
+    if (!expiresAt) { $('adminPassword').focus({ preventScroll: true }); return; }
+    adminKey = isDemo ? 'demo' : '';
+    activateSession(expiresAt);
+    $('loginBtn').disabled = true;
+    message('loginStatus', '正在恢复登录…');
+    await refresh();
+    showDashboard();
+  } catch (error) {
+    logout();
+    message('loginStatus', `无法恢复登录：${error.message || '读取失败'}，请重新登录。`, true);
+  } finally {
+    $('loginBtn').disabled = false;
+  }
 }
 init();

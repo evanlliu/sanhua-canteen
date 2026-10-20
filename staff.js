@@ -32,6 +32,8 @@ function applyLanguage() {
   $('languageSelect').value = lang;
   $('languageSelect').title = tr('langTitle');
   $('languageSelect').setAttribute('aria-label', tr('langTitle'));
+  $('jumpToLookup').title = tr('myReservations');
+  $('jumpToLookup').setAttribute('aria-label', tr('myReservations'));
   renderSelected();
   renderDropdown();
   renderMeals();

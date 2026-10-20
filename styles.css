@@ -66,24 +66,60 @@ body.admin-login-mode{height:100dvh;min-height:100vh;display:flex;flex-direction
   .login-panel .login-subtitle{margin-bottom:13px}
 }
 
-/* V5 — Staff-only floating actions without a masthead */
+/* V6 — Floating icon-only controls. No blank header row above the form. */
 .staff-page .meal-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-.staff-page .compact-main{padding-top:91px}
-.floating-staff-nav{
-  position:fixed;top:18px;right:max(24px,calc((100vw - 1150px)/2 + 24px));
-  z-index:60;display:flex;align-items:center;justify-content:flex-end;gap:10px;
-  padding:4px;border-radius:999px;
-  background:rgba(248,249,244,.85);
-  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
-  box-shadow:0 7px 28px rgba(29,62,43,.055);
+.staff-page .compact-main{padding-top:24px}
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.staff-page .floating-staff-nav{
+  position:fixed;
+  top:16px;
+  right:16px;
+  z-index:60;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:0;
+  background:none;
+  box-shadow:none;
 }
 .staff-page .floating-staff-nav .language-picker,
-.staff-page .floating-staff-nav .navlink{box-shadow:0 2px 9px rgba(29,62,43,.045)}
+.staff-page .floating-staff-nav .navlink{
+  width:44px;height:44px;min-height:44px;
+  padding:0;margin:0;
+  display:flex;align-items:center;justify-content:center;
+  position:relative;border:1px solid #dbe6dc;
+  border-radius:50%;background:#fff;
+  color:var(--green-dark);
+  box-shadow:0 5px 18px rgba(29,62,43,.13);
+  transition:background .2s,border-color .2s,box-shadow .2s;
+}
+.staff-page .floating-staff-nav .language-picker:hover,
+.staff-page .floating-staff-nav .navlink:hover{background:#ebf4ed;border-color:#8db69d}
+.staff-page .floating-staff-nav .navlink:focus-visible,
+.staff-page .floating-staff-nav .language-picker:focus-within{
+  outline:2px solid var(--green);outline-offset:3px;
+}
+.staff-page .floating-staff-nav .floating-icon{width:21px;height:21px;pointer-events:none;flex:none}
+/* Keep the native dropdown behaviour and keyboard/assistive-tech access;
+   its visible face is replaced by the globe icon. */
+.staff-page .floating-staff-nav .language-picker select{
+  position:absolute;inset:0;width:100%;height:100%;
+  opacity:0;cursor:pointer;appearance:auto;
+  padding:0;margin:0;max-width:none;border:0;
+}
 .meals-empty{grid-column:1/-1;text-align:center;color:var(--muted);font-size:14px;line-height:1.7;padding:34px 20px}
 @media(max-width:850px){.staff-page .meal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){
   .staff-page .meal-grid{grid-template-columns:1fr}
-  .staff-page .compact-main{padding-top:81px}
-  .floating-staff-nav{top:10px;right:12px;gap:6px}
-  .staff-page .floating-staff-nav .navlink{font-size:12px;padding:9px 11px}
+  .staff-page .compact-main{padding-top:15px}
+  .staff-page .floating-staff-nav{top:10px;right:10px;gap:7px}
+  .staff-page .floating-staff-nav .language-picker,
+  .staff-page .floating-staff-nav .navlink{width:40px;height:40px;min-height:40px}
+  .staff-page .floating-staff-nav .floating-icon{width:19px;height:19px}
 }
+
+/* V7: Hide the empty header during login, leave logout at the right after login. */
+.admin-actions-bar{justify-content:flex-end;}
+body.admin-login-mode > .admin-actions-bar{display:none;}
+body.admin-login-mode .login-bg{min-height:100dvh;}
+@media(max-height:600px){body.admin-login-mode .login-bg{min-height:100dvh;}}

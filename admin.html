@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f8f9f4"><title>食堂预约管理后台</title><link rel="stylesheet" href="./styles.css"></head>
 <body class="admin-page admin-login-mode">
-<header class="shell admin-shell topbar"><span class="logo"><span class="logo-mark">✦</span><span>食堂预约管理<small>MANAGEMENT CONSOLE</small></span></span><nav class="topnav"><button id="logoutBtn" class="navlink hidden" type="button">退出登录</button></nav></header>
+<header class="shell admin-shell topbar admin-actions-bar"><nav class="topnav"><button id="logoutBtn" class="navlink hidden" type="button">退出登录</button></nav></header>
 <div id="loginArea" class="login-bg">
   <section class="panel login-panel" aria-labelledby="adminLoginTitle">
     <div class="login-icon" aria-hidden="true">🔐</div>
@@ -11,7 +11,7 @@
     <p class="lead login-subtitle">输入密码以管理预约记录、花名册及用餐时段。</p>
     <form id="loginForm">
       <label class="label" for="adminPassword">管理员密码</label>
-      <input id="adminPassword" type="password" class="control" autocomplete="current-password" placeholder="请输入管理员密码" required>
+      <input id="adminPassword" type="password" autofocus class="control" autocomplete="current-password" placeholder="请输入管理员密码" required>
       <button id="loginBtn" class="action" type="submit">登录管理后台</button>
     </form>
     <button class="action ghost hidden" id="demoLoginBtn" style="width:100%;margin-top:10px">🧪 体验管理后台（免密演示）</button>

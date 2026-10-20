@@ -7,17 +7,24 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body class="staff-page">
-  <nav class="topnav floating-staff-nav" aria-label="快速操作 / Quick actions">
-      <label class="language-picker" for="languageSelect">
-        <span class="language-icon" aria-hidden="true">🌐</span>
-        <select id="languageSelect" aria-label="选择语言 / Choose language / Elegir idioma">
-          <option value="zh">中文</option>
-          <option value="en">English</option>
-          <option value="es">Español (México)</option>
-        </select>
-        <span class="language-chevron" aria-hidden="true">⌄</span>
-      </label>
-      <a class="navlink" href="#myReservations" id="jumpToLookup" data-i18n="myReservations">我的预约</a>
+  <!-- Two fixed, icon-only actions float over the page; they do not reserve a header row. -->
+  <nav class="floating-staff-nav" aria-label="快速操作 / Quick actions">
+    <label class="language-picker" for="languageSelect">
+      <svg class="floating-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>
+      </svg>
+      <select id="languageSelect" aria-label="选择语言 / Choose language / Elegir idioma">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+        <option value="es">Español (México)</option>
+      </select>
+    </label>
+    <a class="navlink" href="#myReservations" id="jumpToLookup" title="我的预约">
+      <svg class="floating-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="4" y="3.5" width="16" height="17" rx="2.4"/><path d="M8 3v3M16 3v3M4 9h16m-11 4 2 2 4-4"/>
+      </svg>
+      <span class="sr-only" data-i18n="myReservations">我的预约</span>
+    </a>
   </nav>
   <main class="shell main compact-main">
     <div id="demoHint" class="notice hidden" data-i18n="demoNotice">🧪 演示模式：数据仅保存在当前浏览器，不会写入正式系统。</div>

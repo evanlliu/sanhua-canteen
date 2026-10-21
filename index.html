@@ -59,10 +59,14 @@
       <h2 id="ticketOverlayTitle"></h2>
       <div id="ticketCode" class="ticket-big-code"></div>
       <p id="ticketDetails" class="ticket-details"></p>
+      <div id="ticketEmployee" class="ticket-employee" aria-label="员工信息">
+        <div class="ticket-employee-row"><span id="ticketEmployeeNameLabel">员工姓名</span><strong id="ticketEmployeeName"></strong></div>
+        <div class="ticket-employee-row"><span id="ticketEmployeeIdLabel">员工工号</span><strong id="ticketEmployeeId"></strong></div>
+      </div>
       <div id="ticketSlide" class="ticket-slide" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="滑动撕票">
         <span id="ticketSlideKnob" class="ticket-slide-knob">❯❯</span><span id="ticketSlideHint" class="ticket-slide-hint"></span>
       </div>
-      <div id="ticketVisual" class="ticket-visual hidden"><div id="ticketSymbol" class="ticket-symbol"></div><div id="ticketSeconds" class="ticket-seconds"></div><div id="ticketCountdown" class="ticket-countdown"></div></div>
+      <div id="ticketVisual" class="ticket-visual hidden"><span id="ticketMarkerLabel" class="ticket-marker-label" data-i18n="ticketMarkerLabel">随机动态标识</span><div id="ticketSymbol" class="ticket-symbol"></div><div id="ticketSeconds" class="ticket-seconds"></div><div id="ticketCountdown" class="ticket-countdown"></div></div>
       <p id="ticketOverlayStatus" class="ticket-overlay-status" role="status" aria-live="polite"></p>
     </div>
   </div>

@@ -268,3 +268,17 @@ node --experimental-default-type=module tests/plant-and-roster.test.mjs
 `node tests/employee-and-meals.test.mjs`、`node tests/plant-and-roster.test.mjs`、`node tests/time-window.test.mjs`、`node tests/e-ticket-v14.test.mjs`。测试均使用虚构员工和模拟 GitHub 响应；浏览器演示模式也已验证现场滑动与成功画面。真实 GitHub Pages / 网络环境尚需部署后验收。
 
 **后续版本只继续修改本文件 `README.md`，不建立额外 README。**
+
+
+### V14.1 小更新
+
+- 员工端「我的电子餐票」卡片增加显示 **员工姓名** 与 **员工工号**。
+- 打开电子餐票撕票界面时，同步显示姓名与工号，方便现场工作人员核对。
+- 本次为前端展示优化，不影响原有预约号、Plant、核销和电子撕票规则。
+
+### V14.2 — 电子撕票全屏增加员工信息
+
+- 「我的电子餐票」卡片保留员工姓名和工号。
+- **撕票前的全屏界面、撕票成功后的 8 秒全屏动画，以及已使用状态**均单独列出员工姓名、员工工号，方便发餐人员现场辨认。
+- 全屏页面中 `◆ 248` 一类的数字是**随机动态视觉标识**，不是工号或流水号。增加中、英、墨西哥西班牙语说明文字，避免误认。标识不是可独立验证的防伪凭证。
+- 本版本只调整员工端展示，不改变核销、浏览器凭据、GitHub 数据结构与管理员操作，也不需要修改 `data.json` 或 `config.js`。

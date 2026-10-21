@@ -167,8 +167,9 @@ function renderReservationList(rows) {
     const r=info.reservation, card=document.createElement('article');card.className='res-item ticket-item';
     const left=document.createElement('div');
     const head=document.createElement('strong');head.textContent=`${r.date} · ${reservationMeal(r,state?.settings.meals||[],lang)}`;
+    const person=document.createElement('small');person.textContent=`${tr('name')}: ${r.employeeName||'-'} · ${tr('staffNumber')}: ${r.employeeId||'-'}`;
     const desc=document.createElement('small');desc.textContent=`Plant ${r.plant||'?'} · ${r.mealStart}–${r.mealEnd} · ${tr(availabilityText(info.eligibility))}`;
-    left.append(head,desc);
+    left.append(head,person,desc);
     const controls=document.createElement('div');controls.className='ticket-item-actions';
     const code=document.createElement('div');code.className='code';code.textContent='#'+r.id;
     const btn=document.createElement('button');btn.className='action small';btn.textContent=tr(info.eligibility==='open'?'ticketOpenButton':availabilityText(info.eligibility));
@@ -203,12 +204,19 @@ function closeTicket() {
   activeTicket=null;
   loadMyTickets().catch(()=>{});
 }
+function renderTicketEmployee(reservation) {
+  $('ticketEmployeeNameLabel').textContent=tr('name');
+  $('ticketEmployeeIdLabel').textContent=tr('staffNumber');
+  $('ticketEmployeeName').textContent=reservation.employeeName||'-';
+  $('ticketEmployeeId').textContent=reservation.employeeId||'-';
+}
 function updateTicketModalText() {
   if (!activeTicket) return;
   const r=activeTicket.reservation;
   $('ticketOverlayTitle').textContent=tr('ticketSlideTitle');
   $('ticketCode').textContent=r.id;
   $('ticketDetails').textContent=`Plant ${r.plant} · ${reservationMeal(r,state?.settings.meals||[],lang)}`;
+  renderTicketEmployee(r);
   $('ticketSlideHint').textContent=tr(slideDirection===1?'slideRight':'slideLeft');
   $('ticketSlide').setAttribute('aria-label',$('ticketSlideHint').textContent);
 }
@@ -268,6 +276,8 @@ function showClaimSuccess(result) {
   overlay.style.background=marker.color;
   $('ticketMainIcon').textContent='✅';$('ticketOverlayTitle').textContent=tr('ticketSuccess');
   $('ticketCode').textContent=result.id;
+  // Keep the employee's name and ID visible during the 8-second success screen.
+  if (activeTicket?.reservation) renderTicketEmployee(activeTicket.reservation);
   $('ticketSlide').classList.add('hidden');$('ticketVisual').classList.remove('hidden');
   $('ticketSymbol').textContent=`${marker.symbol} ${marker.number}`;
   $('ticketOverlayStatus').textContent=tr('ticketSuccessNote');

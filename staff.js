@@ -2,12 +2,15 @@ import { api, isDemo, html, localClock } from './client-api.js';
 import { normalMeal, mealName, mealIcon, reservationMeal, canBookMeal, mealAvailability } from './meal-schema.js';
 import { LANGUAGES, translate, detectDeviceLanguage } from './i18n.js';
 import { plantLabel, validPlant } from './plant-schema.js';
+import { newTicketIdentity, ticketListLoad, putLocalTicket, acceptTransferFromFragment } from './ticket-storage.js';
+import { CLAIM_DURATION_MS, visualMarker } from './ticket-schema.js';
 const $ = id => document.getElementById(id);
 const employeeInput = $('employeeInput'), dropdown = $('employeeDropdown'), dateInput = $('mealDate');
 let lang = detectDeviceLanguage(navigator.languages?.length ? navigator.languages : [navigator.language]);
 const tr = (key,args) => translate(lang,key,args);
 let state = null, selected = null, options = [], choice = -1, pending = null, requestSeq = 0, debounceTimer = null, loading = false;
 let lastReservations = null;
+let ownedTickets = [], activeTicket = null, ticketBusy = false, slideDirection = 1, swipeActive = false, swipeStart = 0, swipeProgress = 0, successTimer = null;
 function errorText(error) {
   const raw = String(error?.message || '');
   if (/重复预约|已预约|不能重复|重叠/.test(raw)) return tr('errDuplicate');
@@ -31,7 +34,7 @@ function applyLanguage() {
   document.title = tr('pageTitle');
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.dataset.i18n); });
   employeeInput.placeholder = tr('employeePlaceholder');
-  $('lookupEmployeeId').placeholder = tr('lookupPlaceholder');
+
   $('languageSelect').value = lang;
   $('languageSelect').title = tr('langTitle');
   $('languageSelect').setAttribute('aria-label', tr('langTitle'));
@@ -41,6 +44,7 @@ function applyLanguage() {
   renderDropdown();
   renderMeals();
   if (lastReservations) renderReservationList(lastReservations);
+  if (activeTicket && !ticketBusy) updateTicketModalText();
 }
 function closeDropdown() { dropdown.classList.add('hidden'); employeeInput.setAttribute('aria-expanded', 'false'); choice = -1; }
 function renderDropdown() {
@@ -72,7 +76,7 @@ function renderSelected() {
 }
 function selectEmployee(e) {
   selected = e; employeeInput.value = e.employeeId; options = []; requestSeq++; closeDropdown();
-  renderSelected(); $('lookupEmployeeId').value = e.employeeId; renderMeals();
+  renderSelected(); renderMeals();
 }
 function scheduleSearch() {
   selected = null; renderSelected(); renderMeals();
@@ -135,38 +139,155 @@ async function submitReservation() {
   loading = true; $('confirmBtn').disabled = true; $('cancelBtn').disabled = true;
   $('confirmBtn').textContent = tr('submitting'); renderMeals();
   try {
-    const result = await api('/api/reservations', { method: 'POST', body: pending });
+    const identity = await newTicketIdentity();
+    // Save a pending claim before the network request, so ambiguous network errors can be reconciled.
+    putLocalTicket(localStorage,{secret:identity.secret,pending:true,createdAt:new Date().toISOString()});
+    const result = await api('/api/reservations', { method: 'POST', body: {...pending,credentialHash:identity.credentialHash} });
     const r = result.reservation;
+    putLocalTicket(localStorage,{id:r.id,secret:identity.secret,createdAt:r.createdAt});
     $('modalTitle').textContent = tr('successTitle'); $('modalEmoji').textContent = '✅';
     $('modalText').textContent = tr('successDesc');
     $('modalDetail').innerHTML = `${html(tr('reservationNumber'))}<br><strong style="font-size:30px;letter-spacing:2px">${html(r.id)}</strong><br>${html(r.date)} · ${html(reservationMeal(r,state.settings.meals,lang))} · ${html(r.mealStart)}–${html(r.mealEnd)} · ${html(plantLabel(r.plant))}`;
     $('confirmBtn').textContent = tr('myReservations'); $('confirmBtn').disabled = false;
     $('cancelBtn').textContent = tr('close'); $('cancelBtn').disabled = false;
-    $('confirmBtn').onclick = () => { loading = false; closeReserve(); $('lookupEmployeeId').value = r.employeeId; lookup(); jumpToLookup(); };
+    $('confirmBtn').onclick = () => { loading = false; closeReserve(); loadMyTickets(); jumpToLookup(); };
+    loadMyTickets();
     toast(tr('savedToast',{code:r.id}));
   } catch (error) { $('modalStatus').textContent = errorText(error); $('modalStatus').classList.add('error'); $('confirmBtn').disabled = false; }
   finally { loading = false; if ($('confirmBtn').textContent === tr('submitting')) $('confirmBtn').textContent = tr('retry'); $('cancelBtn').disabled = false; renderMeals(); }
 }
-function renderReservationList(rows) {
-  const result = $('reservationList');
-  result.innerHTML = rows.map(r => `<article class="res-item"><div><strong>${html(r.date)} · ${html(reservationMeal(r,state?.settings.meals||[],lang))}</strong><small>${html(r.employeeName)} · ${html(tr('staffNumber'))} ${html(r.employeeId)}<br>⏱ ${html(r.mealStart)}–${html(r.mealEnd)} · ${html(plantLabel(r.plant))} · ${html(tr('booked'))}</small></div><div class="code">#${html(r.id)}</div></article>`).join('');
-  $('lookupStatus').textContent = rows.length ? tr('found',{count:rows.length}) : tr('notFound');
+function availabilityText(code) {
+  return ({ open:'ticketOpen', used:'ticketUsed', early:'ticketEarly', late:'ticketLate', disabled:'ticketDisabled', day:'ticketDay', exception:'ticketException', missing:'ticketInvalid' })[code] || 'ticketInvalid';
 }
-async function lookup() {
-  const employeeId = $('lookupEmployeeId').value.trim(), result = $('reservationList'), status = $('lookupStatus');
-  lastReservations = null; result.replaceChildren(); status.textContent = ''; status.className = 'status';
-  if (!/^\d{1,24}$/.test(employeeId)) { status.textContent = tr('invalidId'); status.classList.add('error'); return; }
-  $('lookupBtn').disabled = true; $('lookupBtn').textContent = tr('querying');
-  try { const response = await api('/api/reservations/my?employeeId=' + encodeURIComponent(employeeId)); lastReservations = response.reservations || []; renderReservationList(lastReservations); }
-  catch (error) { status.textContent = errorText(error); status.classList.add('error'); }
-  finally { $('lookupBtn').disabled = false; $('lookupBtn').textContent = tr('lookupBtn'); }
+function renderReservationList(rows) {
+  const result=$('reservationList');result.replaceChildren();
+  if (!rows.length) { $('lookupStatus').textContent=tr('ticketNone'); return; }
+  $('lookupStatus').textContent=tr('ticketCount',{count:rows.length});
+  for (const info of rows) {
+    const r=info.reservation, card=document.createElement('article');card.className='res-item ticket-item';
+    const left=document.createElement('div');
+    const head=document.createElement('strong');head.textContent=`${r.date} · ${reservationMeal(r,state?.settings.meals||[],lang)}`;
+    const desc=document.createElement('small');desc.textContent=`Plant ${r.plant||'?'} · ${r.mealStart}–${r.mealEnd} · ${tr(availabilityText(info.eligibility))}`;
+    left.append(head,desc);
+    const controls=document.createElement('div');controls.className='ticket-item-actions';
+    const code=document.createElement('div');code.className='code';code.textContent='#'+r.id;
+    const btn=document.createElement('button');btn.className='action small';btn.textContent=tr(info.eligibility==='open'?'ticketOpenButton':availabilityText(info.eligibility));
+    btn.disabled=info.eligibility!=='open';btn.onclick=()=>openTicket(info);
+    controls.append(code,btn);card.append(left,controls);result.append(card);
+  }
+}
+async function loadMyTickets() {
+  const status=$('lookupStatus');status.textContent=tr('ticketLoading');
+  const saved=ticketListLoad(localStorage);
+  if (!saved.length) {ownedTickets=[];lastReservations=[];renderReservationList([]);return;}
+  const results=await Promise.allSettled(saved.map(async item=>{
+    const response=await api('/api/tickets/status',{method:'POST',body:{id:item.id||'',secret:item.secret}});
+    if (!item.id && response.reservation.id) putLocalTicket(localStorage,{id:response.reservation.id,secret:item.secret,createdAt:item.createdAt});
+    return {...response,localSecret:item.secret};
+  }));
+  ownedTickets=results.filter(x=>x.status==='fulfilled').map(x=>x.value);
+  lastReservations=ownedTickets;
+  renderReservationList(ownedTickets);
+  const failures=results.filter(x=>x.status==='rejected');
+  if (failures.length) status.textContent += ' · '+tr('ticketUnverified',{count:failures.length});
 }
 function jumpToLookup(event) {
   event?.preventDefault();
-  if (selected && !$('lookupEmployeeId').value.trim()) $('lookupEmployeeId').value = selected.employeeId;
-  $('myReservations').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  // Focus input without additional page scroll once the smooth scrolling begins.
-  $('lookupEmployeeId').focus({preventScroll:true});
+  $('myReservations').scrollIntoView({behavior:'smooth',block:'center'});
+  loadMyTickets().catch(error=>{$('lookupStatus').textContent=errorText(error);});
+}
+function closeTicket() {
+  if (ticketBusy) return;
+  clearTimeout(successTimer);successTimer=null;
+  $('ticketOverlay').classList.add('hidden');$('ticketOverlay').setAttribute('aria-hidden','true');
+  activeTicket=null;
+  loadMyTickets().catch(()=>{});
+}
+function updateTicketModalText() {
+  if (!activeTicket) return;
+  const r=activeTicket.reservation;
+  $('ticketOverlayTitle').textContent=tr('ticketSlideTitle');
+  $('ticketCode').textContent=r.id;
+  $('ticketDetails').textContent=`Plant ${r.plant} · ${reservationMeal(r,state?.settings.meals||[],lang)}`;
+  $('ticketSlideHint').textContent=tr(slideDirection===1?'slideRight':'slideLeft');
+  $('ticketSlide').setAttribute('aria-label',$('ticketSlideHint').textContent);
+}
+function randomSlideDirection() {
+  const byte=new Uint8Array(1);crypto.getRandomValues(byte);return byte[0]%2?1:-1;
+}
+async function openTicket(info) {
+  if (info.eligibility!=='open') return;
+  activeTicket=info;slideDirection=randomSlideDirection();swipeProgress=0;
+  $('ticketOverlay').classList.remove('hidden');$('ticketOverlay').setAttribute('aria-hidden','false');
+  $('ticketScreen').style.background='';$('ticketSlide').classList.remove('hidden');$('ticketVisual').classList.add('hidden');
+  $('ticketOverlayStatus').textContent=tr('ticketSwipeNote');$('ticketMainIcon').textContent='🎟️';
+  $('ticketClose').classList.remove('hidden');
+  const knob=$('ticketSlideKnob');knob.style.transform='';knob.textContent=slideDirection===1?'❯❯':'❮❮';
+  $('ticketSlide').classList.toggle('reverse',slideDirection===-1);
+  updateTicketModalText();
+}
+function updateSwipe(percent) {
+  swipeProgress=Math.max(0,Math.min(100,percent));
+  $('ticketSlide').setAttribute('aria-valuenow',String(Math.round(swipeProgress)));
+  const track=$('ticketSlide');
+  const span=Math.max(0,track.clientWidth-$('ticketSlideKnob').clientWidth-12);
+  $('ticketSlideKnob').style.transform=`translateX(${slideDirection*span*swipeProgress/100}px)`;
+}
+function onSwipeEnd() {
+  if (!swipeActive) return;swipeActive=false;
+  if (swipeProgress>=85) { updateSwipe(100);claimTicket(); }
+  else updateSwipe(0);
+}
+async function claimTicket() {
+  if (!activeTicket || ticketBusy) return;
+  ticketBusy=true;$('ticketSlide').classList.add('hidden');$('ticketClose').classList.add('hidden');
+  $('ticketOverlayStatus').textContent=tr('ticketRedeeming');
+  const {reservation,localSecret}=activeTicket;
+  const bytes=new Uint8Array(20);crypto.getRandomValues(bytes);
+  const requestId=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
+  try {
+    // Re-read the up-to-date ticket state before writing.
+    const fresh=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret}});
+    if (fresh.eligibility!=='open') throw new Error(tr(availabilityText(fresh.eligibility)));
+    const result=await api('/api/tickets/claim',{method:'POST',body:{id:reservation.id,secret:localSecret,requestId}});
+    showClaimSuccess(result);
+  } catch(error) {
+    let reconciled=false;
+    try {
+      const last=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret}});
+      if (last.reservation.redeemStatus==='used') {
+        $('ticketOverlayStatus').textContent=tr('ticketUnknownUsed');reconciled=true;
+      }
+    } catch { /* status unknown */ }
+    if (!reconciled) $('ticketOverlayStatus').textContent=tr('ticketUnknown')+' '+errorText(error);
+    $('ticketClose').classList.remove('hidden');
+  } finally {ticketBusy=false;}
+}
+function showClaimSuccess(result) {
+  const overlay=$('ticketScreen'), marker=result.marker||visualMarker();
+  overlay.style.background=marker.color;
+  $('ticketMainIcon').textContent='✅';$('ticketOverlayTitle').textContent=tr('ticketSuccess');
+  $('ticketCode').textContent=result.id;
+  $('ticketSlide').classList.add('hidden');$('ticketVisual').classList.remove('hidden');
+  $('ticketSymbol').textContent=`${marker.symbol} ${marker.number}`;
+  $('ticketOverlayStatus').textContent=tr('ticketSuccessNote');
+  const startAt=Date.now();
+  const endAt=startAt+CLAIM_DURATION_MS;
+  const baseline=Date.parse(result.confirmedAt || result.redeemedAt)||Date.now(),localAt=Date.now();
+  function tick() {
+    if (!activeTicket) return;
+    $('ticketSeconds').textContent=new Date(baseline+Date.now()-localAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:state?.settings?.timeZone||'America/Monterrey'});
+    const tones=[marker.color,'#245eac','#794cb2','#17684f'];
+    overlay.style.background=tones[Math.floor((Date.now()-startAt)/1700)%tones.length];
+    const remaining=Math.max(0,Math.ceil((endAt-Date.now())/1000));
+    $('ticketCountdown').textContent=tr('ticketSecondsLeft',{count:remaining});
+    if (remaining>0) {successTimer=setTimeout(tick,250);return;}
+    overlay.style.background='#46544e';$('ticketVisual').classList.add('hidden');$('ticketMainIcon').textContent='🔒';
+    $('ticketOverlayTitle').textContent=tr('ticketUsed');$('ticketOverlayStatus').textContent=tr('ticketNoReplay');
+    $('ticketClose').classList.remove('hidden');
+    loadMyTickets().catch(()=>{});
+  }
+  tick();
 }
 async function init() {
   if (isDemo) $('demoHint').classList.remove('hidden');
@@ -185,13 +306,20 @@ async function init() {
     if (ev.key === 'Enter' && !dropdown.classList.contains('hidden')) { ev.preventDefault(); selectEmployee(options[choice < 0 ? 0 : choice]); }
   });
   document.addEventListener('click', ev => { if (!ev.target.closest('.search-wrap')) closeDropdown(); });
-  $('lookupBtn').addEventListener('click', lookup);
-  $('lookupEmployeeId').addEventListener('keydown', ev => { if (ev.key === 'Enter') lookup(); });
+  $('ticketRefresh').addEventListener('click',()=>loadMyTickets().catch(err=>alertArea(errorText(err))));
+  $('ticketClose').onclick=closeTicket;
+  const slider=$('ticketSlide');
+  slider.addEventListener('pointerdown',e=>{if(!activeTicket||ticketBusy)return;swipeActive=true;swipeStart=e.clientX;slider.setPointerCapture(e.pointerId);});
+  slider.addEventListener('pointermove',e=>{if(!swipeActive)return;const dx=(e.clientX-swipeStart)*slideDirection;updateSwipe(dx/Math.max(1,slider.clientWidth-60)*100);});
+  slider.addEventListener('pointerup',onSwipeEnd);slider.addEventListener('pointercancel',()=>{swipeActive=false;updateSwipe(0)});
+  slider.addEventListener('keydown',e=>{if(e.key===(slideDirection===1?'ArrowRight':'ArrowLeft')){e.preventDefault();updateSwipe(swipeProgress+25);if(swipeProgress>=85)claimTicket();}});
   $('closeModal').onclick = closeReserve; $('cancelBtn').onclick = closeReserve;
   $('confirmBtn').onclick = submitReservation;
   $('reserveModal').addEventListener('click', ev => { if (ev.target === $('reserveModal')) closeReserve(); });
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeReserve(); });
   applyLanguage();
+  await acceptTransferFromFragment(localStorage);
+  loadMyTickets().catch(()=>{});
   employeeInput.focus();
   try {
     state = await api('/api/config');

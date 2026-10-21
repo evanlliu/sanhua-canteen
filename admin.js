@@ -1,6 +1,7 @@
 import { api, isDemo, html, mealTitle, formatTime } from './client-api.js';
 import { readXlsxRows } from './xlsx-reader.js';
 import { normalMeal, mealName, mealIcon, reservationMeal } from './meal-schema.js';
+import { newTicketIdentity, transferLink } from './ticket-storage.js';
 const $ = id => document.getElementById(id);
 let adminKey = '', db = null, rosterFileRows = null, rosterFileColumns = null, busy = false;
 let filtered = [];
@@ -132,7 +133,7 @@ function renderAll() {
   $('statToday').textContent = db.reservations.filter(x => x.date === db.today).length;
   $('statEnabled').textContent = db.settings.meals.filter(x => x.enabled).length;
   $('todayLabel').textContent = `用餐日期：${db.today}`;
-  renderMealFilters(); renderBookings(); renderRoster(); renderSettings();
+  renderMealFilters(); renderBookings(); renderRoster(); renderSettings(); renderETickets();
 }
 function displayMeal(row) { return reservationMeal(row, db?.settings?.meals || [], 'zh'); }
 function renderMealFilters() {
@@ -517,6 +518,73 @@ function exportCSV() {
   link.href = url; link.download = `食堂预约记录_${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
+
+function ticketStatus(row) {
+  return row.redeemedAt||row.redeemStatus==='used'?'已使用':row.redeemStatus==='exception'?'异常待处理':row.credentialHash?'待领餐':'旧版餐票（未签发）';
+}
+function renderETickets() {
+  if (!db) return;
+  $('eTicketEnabled').checked=!!db.settings.eTicketEnabled;
+  const rows=db.reservations;
+  $('eTicketPending').textContent=rows.filter(x=>x.credentialHash&&!x.redeemedAt&&x.redeemStatus!=='used'&&x.redeemStatus!=='exception').length;
+  $('eTicketUsed').textContent=rows.filter(x=>x.redeemedAt||x.redeemStatus==='used').length;
+  $('eTicketException').textContent=rows.filter(x=>x.redeemStatus==='exception').length;
+  renderTicketResults();
+}
+function renderTicketResults() {
+  const container=$('ticketAdminResults');container.replaceChildren();
+  if (!db) return;
+  const q=$('ticketAdminSearch').value.trim().toLowerCase();
+  if (!q) return;
+  const rows=db.reservations.filter(x=>x.id.toLowerCase().includes(q)||String(x.employeeId).includes(q)).slice(0,20);
+  if (!rows.length) {container.textContent='未找到预约';return;}
+  for (const r of rows) {
+    const card=document.createElement('div');card.className='ticket-admin-entry';
+    const detail=document.createElement('div');detail.className='ticket-admin-description';
+    detail.textContent=`${r.id} · ${r.employeeName} (${r.employeeId}) · Plant ${r.plant||'?'} · ${displayMeal(r)} · ${ticketStatus(r)}${r.redeemedAt?' · '+formatTime(r.redeemedAt):''}`;
+    card.append(detail);
+    const tools=document.createElement('div');tools.className='ticket-admin-actions';
+    const reissue=document.createElement('button');reissue.type='button';reissue.className='action secondary small';reissue.textContent='换设备重新签发';
+    reissue.disabled=busy||!!r.redeemedAt||r.redeemStatus==='used';reissue.onclick=()=>reissueTicket(r);
+    const exception=document.createElement('button');exception.type='button';exception.className='action secondary small';exception.textContent='记录异常';
+    exception.disabled=busy;exception.onclick=()=>recordTicketException(r);
+    tools.append(reissue,exception);card.append(tools);container.append(card);
+    if (r.ticketEvents?.length) {
+      const notes=document.createElement('small');notes.className='muted';notes.textContent=`最近异常备注：${r.ticketEvents.at(-1).note}`;card.append(notes);
+    }
+  }
+}
+async function saveTicketMode() {
+  if (busy) return;
+  const enabled=$('eTicketEnabled').checked;
+  if (!confirm(`确定${enabled?'开启':'关闭'}电子领餐模式吗？`)) {$('eTicketEnabled').checked=!!db.settings.eTicketEnabled;return;}
+  busy=true;$('saveTicketMode').disabled=true;
+  try {await authApi('/api/admin/tickets/toggle',{method:'PUT',body:{enabled}});await refresh();message('eTicketModeStatus',enabled?'电子领餐已启用':'电子领餐已关闭');}
+  catch(e){onError(e,'eTicketModeStatus');$('eTicketEnabled').checked=!!db.settings.eTicketEnabled;}
+  finally{busy=false;$('saveTicketMode').disabled=false;}
+}
+async function reissueTicket(row) {
+  if (busy) return;
+  if (!confirm(`请确认已经核实员工实体工牌。重新签发将使旧设备餐票失效：\n${row.id} · ${row.employeeName}`))return;
+  busy=true;
+  try {
+    const identity=await newTicketIdentity();
+    await authApi('/api/admin/tickets/reissue',{method:'POST',body:{id:row.id,credentialHash:identity.credentialHash}});
+    const link=transferLink(row.id,identity.secret);
+    $('ticketTransferLink').value=link;$('ticketTransferBox').classList.remove('hidden');
+    await refresh();message('ticketAdminStatus',`已重新签发 ${row.id}。请当面交付一次性转移链接，旧浏览器立即失效。`);
+  } catch(e){onError(e,'ticketAdminStatus');}
+  finally{busy=false;renderTicketResults();}
+}
+async function recordTicketException(row) {
+  const note=prompt(`为 ${row.id} 记录异常原因（不会重置已使用状态）：`);
+  if (note===null)return;
+  if (note.trim().length<3) {message('ticketAdminStatus','请填写至少3个字符的原因',true);return;}
+  busy=true;
+  try {await authApi('/api/admin/tickets/exception',{method:'POST',body:{id:row.id,note:note.trim().slice(0,300)}});await refresh();message('ticketAdminStatus',`已记录 ${row.id} 的异常信息`);}
+  catch(e){onError(e,'ticketAdminStatus');}
+  finally{busy=false;renderTicketResults();}
+}
 function selectTab(tab) {
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(x => x.classList.toggle('active', x.id === 'tab-' + tab));
@@ -538,6 +606,10 @@ function init() {
   $('importBtn').onclick = importRoster;
   $('saveSettingsBtn').onclick = saveSettings;
   $('addMealBtn').onclick = addMeal;
+  $('saveTicketMode').onclick=saveTicketMode;
+  $('ticketAdminFind').onclick=renderTicketResults;
+  $('ticketAdminSearch').onkeydown=e=>{if(e.key==='Enter')renderTicketResults();};
+  $('ticketTransferCopy').onclick=()=>navigator.clipboard.writeText($('ticketTransferLink').value).then(()=>message('ticketAdminStatus','链接已复制')).catch(()=>message('ticketAdminStatus','复制失败，请手动选择链接',true));
   restoreLogin();
 }
 async function restoreLogin() {

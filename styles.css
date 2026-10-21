@@ -162,3 +162,45 @@ body.admin-login-mode .login-bg{min-height:100dvh;}
 .roster-detail-row{display:grid;grid-template-columns:minmax(145px,1fr) minmax(0,2fr);gap:15px;padding:11px 4px;border-bottom:1px solid #e9eee6;font-size:13px;word-break:break-word}
 .roster-detail-row strong{color:#597566;white-space:pre-wrap}
 @media(max-width:600px){.roster-detail-row{grid-template-columns:1fr;gap:5px}}
+
+/* V14 electronic ticket: floating success screen and swipe-to-tear interaction. */
+.ticket-item { align-items:center; }
+.ticket-item-actions { display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
+.ticket-item-actions .action { white-space:nowrap; }
+.ticket-overlay { position:fixed; inset:0; z-index:2000; background:#f7faf6; display:flex; align-items:stretch; justify-content:center; }
+.ticket-overlay.hidden { display:none !important; }
+.ticket-screen { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; width:100%; min-height:100dvh; overflow-y:auto; color:white; padding:70px 22px 44px; gap:14px; background:linear-gradient(155deg,#14694f,#277c60); transition:background-color .2s; }
+.ticket-overlay-close { position:absolute; top:max(14px, env(safe-area-inset-top)); right:20px; width:43px; height:43px; border-radius:50%; background:#ffffff30; border:1px solid #ffffff6b; color:#fff; font-size:27px; cursor:pointer; }
+.ticket-big-icon { font-size:clamp(52px,12vw,92px); line-height:1.1; }
+.ticket-screen h2 { color:inherit; font-size:clamp(25px,6vw,48px); font-weight:900; margin:0; }
+.ticket-big-code { font-size:clamp(21px,5vw,39px); letter-spacing:1px; font-weight:900; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.ticket-details {font-weight:650;font-size:clamp(16px,3vw,23px);margin:0;}
+.ticket-overlay-status {max-width:500px;line-height:1.55;font-size:15px;margin-top:6px;}
+.ticket-slide { width:min(460px,100%); height:80px; border-radius:999px; padding:6px; position:relative; display:flex; align-items:center; background:#ffffff26; border:1px solid #ffffff90; touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; overflow:hidden; }
+.ticket-slide-knob { position:absolute;left:6px;display:grid;place-items:center;width:66px;height:66px;border-radius:50%;background:#fff;color:#17694e;font-weight:900;font-size:22px;box-shadow:0 6px 24px #0003; z-index:1; will-change:transform; }
+.ticket-slide.reverse .ticket-slide-knob {left:auto;right:6px;}
+.ticket-slide-hint { margin:auto;font-size:14px;font-weight:800;color:#fff;pointer-events:none; }
+.ticket-visual {display:flex;flex-direction:column;gap:12px;align-items:center;}
+.ticket-visual.hidden {display:none !important;}
+.ticket-symbol {font-size:clamp(32px,9vw,66px);font-weight:900;letter-spacing:5px;}
+.ticket-seconds {font-size:clamp(23px,6vw,37px);font-weight:800;letter-spacing:3px;font-variant-numeric:tabular-nums;}
+.ticket-countdown {font-size:18px;font-weight:700;}
+.ticket-screen .ticket-slide.hidden {display:none !important;}
+.eticket-toggle-row {display:flex;align-items:center;flex-wrap:wrap;gap:20px;margin:20px 0;}
+.eticket-toggle-row input {width:20px;height:20px;vertical-align:middle;accent-color:#1a734e;}
+.eticket-stat-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0;}
+.eticket-stat-grid>div {padding:18px;border-radius:13px;border:1px solid #dce8dd;background:#f6faf6;display:flex;flex-direction:column;align-items:center;gap:5px;}
+.eticket-stat-grid strong {font-size:27px;color:#176949;}
+.ticket-admin-results {margin-top:18px;display:grid;gap:12px;}
+.ticket-admin-entry {border:1px solid #e1e8df;border-radius:14px;padding:16px;display:grid;gap:10px;}
+.ticket-admin-description {line-height:1.6;overflow-wrap:anywhere;font-weight:600;}
+.ticket-admin-actions {display:flex;flex-wrap:wrap;gap:10px;}
+#ticketTransferBox {margin-top:20px;}
+#ticketTransferLink {width:100%;height:auto;min-height:95px;overflow-wrap:anywhere;}
+@media(max-width:600px) {
+  .ticket-item {display:flex; flex-direction:column;align-items:stretch;gap:12px;}
+  .ticket-item-actions {flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+  .ticket-overlay {overscroll-behavior:contain;}
+  .eticket-stat-grid {gap:6px;}
+  .eticket-stat-grid>div {padding:12px 5px;font-size:12px;}
+}

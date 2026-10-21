@@ -2,11 +2,12 @@ import { githubApi } from './github-store.js';
 import { normalMeal, canBookMeal } from './meal-schema.js';
 import { searchEmployees } from './employee-search.js';
 import { validPlant, nextReservationCode } from './plant-schema.js';
+import { hashSecret, claimEligibility, visualMarker } from './ticket-schema.js';
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const KEY = 'evan-canteen-local-demo-v1';
 const initialState = {
   settings: {
-    timeZone: 'America/Monterrey', maxAdvanceDays: 7,
+    timeZone: 'America/Monterrey', maxAdvanceDays: 7, eTicketEnabled: false,
     meals: [
       { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
       { id: 'lunch', label: '午餐', start: '11:30', end: '14:00', enabled: true },
@@ -38,7 +39,7 @@ function demoLoad() {
 }
 function demoSave(data) { localStorage.setItem(KEY, JSON.stringify(data)); }
 function bad(s) { throw new Error(s); }
-function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
+async function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   const db = demoLoad();
   const url = new URL(path, location.origin === 'null' ? 'https://demo.local' : location.origin);
   const p = url.pathname;
@@ -47,9 +48,10 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
   if (p === '/api/employees/search') {
     return { employees: searchEmployees(db.employees, url.searchParams.get('q') || '').map(({ employeeId, name }) => ({ employeeId, name })) };
   }
-  if (p === '/api/reservations/my') return { reservations: db.reservations.filter(x => x.employeeId === url.searchParams.get('employeeId')).sort((a, b) => b.date.localeCompare(a.date)) };
+  if (p === '/api/reservations/my') bad('V14 不再支持工号查询他人的餐票');
   if (p === '/api/reservations' && method === 'POST') {
-    const { employeeId, date, mealId, plant } = body;
+    const { employeeId, date, mealId, plant, credentialHash } = body;
+    if (!/^[0-9a-f]{64}$/.test(String(credentialHash||''))) bad('缺少本机餐票凭据');
     if (!validPlant(plant)) bad('请选择 Plant D / G / B / H');
     const e = db.employees.find(x => x.employeeId === employeeId);
     if (!e) bad('工号不在花名册中');
@@ -63,8 +65,28 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealId === mealId)) bad('此员工已预约当天该餐次，每餐只能预约一次');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealStart < m.end && m.start < x.mealEnd)) bad('该员工在重叠的用餐时段已预约，不能重复预约');
     const id = nextReservationCode(db, date, plant);
-    const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date, mealStart: m.start, mealEnd: m.end, mealNameZh: normalMeal(m).nameZh, mealNameEn: normalMeal(m).nameEn, mealNameEs: normalMeal(m).nameEs, createdAt: new Date().toISOString() };
+    const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date, mealStart: m.start, mealEnd: m.end, mealNameZh: normalMeal(m).nameZh, mealNameEn: normalMeal(m).nameEn, mealNameEs: normalMeal(m).nameEs, createdAt: new Date().toISOString(), credentialHash, redeemStatus:'pending', redeemedAt:null, ticketVersion:1 };
     db.reservations.push(reservation); demoSave(db); return { reservation };
+  }
+
+  if (p === '/api/tickets/status' && method === 'POST') {
+    const digest=await hashSecret(body?.secret);
+    const r=db.reservations.find(x=>x.credentialHash===digest && (!body.id||x.id===body.id));
+    if (!r) bad('本机餐票无效、已重新签发或尚未创建');
+    const {credentialHash,...reservation}=r;
+    const {today,nowTime}=localClock(db.settings.timeZone);
+    return {reservation,eligibility:claimEligibility(r,db.settings,today,nowTime),eTicketEnabled:!!db.settings.eTicketEnabled,today,nowTime};
+  }
+  if (p === '/api/tickets/claim' && method === 'POST') {
+    const digest=await hashSecret(body?.secret);
+    const r=db.reservations.find(x=>x.id===body?.id && x.credentialHash===digest);
+    if (!r) bad('本机餐票无效');
+    if (r.redeemedAt||r.redeemStatus==='used') bad('此餐票已使用');
+    const {today,nowTime}=localClock(db.settings.timeZone);
+    if (claimEligibility(r,db.settings,today,nowTime)!=='open') bad('当前餐票不允许核销');
+    const marker=visualMarker();
+    r.redeemStatus='used';r.redeemedAt=new Date().toISOString();r.redeemRequestId=body.requestId;r.redeemMarker=marker;
+    demoSave(db);return {id:r.id,redeemedAt:r.redeemedAt,marker,status:'used',reservation:{id:r.id,plant:r.plant,mealId:r.mealId,mealNameZh:r.mealNameZh,mealNameEn:r.mealNameEn,mealNameEs:r.mealNameEs}};
   }
   if (p === '/api/admin/dashboard') return { ...db, settings: {...db.settings, maxAdvanceDays: 0, meals: db.settings.meals.map(normalMeal)}, ...localClock(db.settings.timeZone) };
   if (p === '/api/admin/import-roster' && method === 'POST') {
@@ -79,7 +101,23 @@ function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}) {
     }
     demoSave(db); return { oldCount, imported: body.employees.length, total: db.employees.length };
   }
-  if (p === '/api/admin/settings' && method === 'PUT') { if (!Array.isArray(body?.meals) || !body.meals.length) bad('至少保留一个餐次'); db.settings = {...body, maxAdvanceDays: 0, meals: body.meals.map(normalMeal)}; demoSave(db); return { settings: db.settings }; }
+
+  if (p === '/api/admin/tickets/toggle' && method==='PUT') {db.settings.eTicketEnabled=!!body.enabled;demoSave(db);return {eTicketEnabled:db.settings.eTicketEnabled};}
+  if (p === '/api/admin/tickets/reissue' && method==='POST') {
+    const r=db.reservations.find(x=>x.id===body?.id);
+    if (!r||r.redeemedAt||r.redeemStatus==='used') bad('该餐票不存在或已核销');
+    if (!/^[0-9a-f]{64}$/.test(String(body.credentialHash||''))) bad('凭据格式无效');
+    r.credentialHash=body.credentialHash;r.redeemStatus='pending';r.ticketVersion=(r.ticketVersion||0)+1;r.reissuedAt=new Date().toISOString();
+    demoSave(db);return {id:r.id,ticketVersion:r.ticketVersion};
+  }
+  if (p === '/api/admin/tickets/exception' && method==='POST') {
+    const r=db.reservations.find(x=>x.id===body?.id);
+    if (!r||String(body.note||'').trim().length<3) bad('预约不存在或备注过短');
+    r.ticketEvents=[...(r.ticketEvents||[]),{at:new Date().toISOString(),note:String(body.note).slice(0,300)}];
+    if (!r.redeemedAt && r.redeemStatus!=='used') r.redeemStatus='exception';
+    demoSave(db);return {id:r.id,redeemStatus:r.redeemStatus};
+  }
+  if (p === '/api/admin/settings' && method === 'PUT') { if (!Array.isArray(body?.meals) || !body.meals.length) bad('至少保留一个餐次'); db.settings = {...body, eTicketEnabled:!!db.settings.eTicketEnabled, maxAdvanceDays: 0, meals: body.meals.map(normalMeal)}; demoSave(db); return { settings: db.settings }; }
   if (p.startsWith('/api/admin/reservations/') && method === 'DELETE') {
     const id = p.split('/').pop(), index = db.reservations.findIndex(r => r.id === id);
     if (index < 0) bad('记录不存在');

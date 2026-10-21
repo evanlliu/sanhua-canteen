@@ -8,12 +8,13 @@ import { decryptGitHubToken } from './token-obfuscation.js';
 import { normalMeal, mealName, canBookMeal } from './meal-schema.js';
 import { searchEmployees } from './employee-search.js';
 import { validPlant, nextReservationCode, validReservationCode } from './plant-schema.js';
+import { hashSecret, claimEligibility, visualMarker, ticketIdValid } from './ticket-schema.js';
 const defaultMeals = [
   { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
   { id: 'lunch', label: '午餐', start: '11:30', end: '14:00', enabled: true },
   { id: 'dinner', label: '晚餐', start: '17:30', end: '20:00', enabled: true },
 ];
-const defaultSettings = { timeZone: 'America/Monterrey', maxAdvanceDays: 7, meals: defaultMeals };
+const defaultSettings = { timeZone: 'America/Monterrey', maxAdvanceDays: 7, meals: defaultMeals, eTicketEnabled: false };
 const wait = delay => new Promise(resolve => setTimeout(resolve, delay));
 function fail(text, status) { const err = new Error(text); if (status) err.status = status; throw err; }
 function config() {
@@ -115,7 +116,7 @@ async function mutate(token, reason, updater) {
     const { data, sha } = await read(token);
     const output = updater(data);
     data.updatedAt = new Date().toISOString();
-    try { await write(token, data, sha, reason); return output; }
+    try { const saved=await write(token, data, sha, reason); return output?.status==='used' ? {...output,confirmedAt:saved?.commit?.committer?.date || null}:output; }
     catch (err) {
       if (err.conflict && attempt < 4) { await wait(120 * (attempt + 1)); continue; }
       throw err;
@@ -201,14 +202,13 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
     return { employees: searchEmployees(data.employees, q).map(({ employeeId, name }) => ({ employeeId, name })) };
   }
   if (p === '/api/reservations/my' && method === 'GET') {
-    const id = (url.searchParams.get('employeeId') || '').trim();
-    if (!/^\d{1,24}$/.test(id)) fail('请输入完整的数字工号');
-    const { data } = await read(token);
-    return { reservations: byDate(data.reservations.filter(r => String(r.employeeId) === id)) };
+    fail('V14 已关闭按工号公开查询预约，请在原设备查看本机餐票。', 403);
   }
   if (p === '/api/reservations' && method === 'POST') {
     const employeeId = String(body?.employeeId || '').trim();
     const date = String(body?.date || ''), mealId = String(body?.mealId || ''), plant = String(body?.plant || '');
+    const credentialHash = String(body?.credentialHash || '');
+    if (!/^[0-9a-f]{64}$/.test(credentialHash)) fail('缺少本机领餐凭据，请刷新后再预约');
     if (!validPlant(plant)) fail('请选择 Plant D / G / B / H');
     if (!/^\d{1,24}$/.test(employeeId) || !validDate(date) || !/^[a-z][a-z0-9_-]{0,39}$/.test(mealId)) fail('员工、用餐日期或餐次无效');
     return mutate(token, `reserve ${mealId} ${date}`, data => {
@@ -226,9 +226,40 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
       // Allocate within mutate's SHA-guarded retry loop, never reusing deleted numbers.
       const id = nextReservationCode(data, date, plant);
       const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date,
-        mealStart: meal.start, mealEnd: meal.end, mealNameZh: mealName(meal, 'zh'), mealNameEn: mealName(meal, 'en'), mealNameEs: mealName(meal, 'es'), createdAt: new Date().toISOString() };
+        mealStart: meal.start, mealEnd: meal.end, mealNameZh: mealName(meal, 'zh'), mealNameEn: mealName(meal, 'en'), mealNameEs: mealName(meal, 'es'), createdAt: new Date().toISOString(), credentialHash, redeemStatus:'pending', redeemedAt:null, ticketVersion:1 };
       data.reservations.push(reservation);
       return { reservation };
+    });
+  }
+
+  // Ticket possession is checked for normal UI flows, but this browser-side
+  // implementation is not an access-control boundary for a public repository.
+  if (p === '/api/tickets/status' && method === 'POST') {
+    const secret = String(body?.secret || ''), digest = await hashSecret(secret);
+    const { data } = await read(token);
+    const r = data.reservations.find(x => x.credentialHash === digest && (!body?.id || x.id === body.id));
+    if (!r) fail('本机餐票无效、已被重新签发或未保存成功', 404);
+    const { credentialHash, ...reservation } = r;
+    const {today,nowTime}=clock(data.settings.timeZone);
+    return {reservation, eligibility:claimEligibility(r,data.settings,today,nowTime), eTicketEnabled:!!data.settings.eTicketEnabled, nowTime, today};
+  }
+  if (p === '/api/tickets/claim' && method === 'POST') {
+    const secret=String(body?.secret||''), digest=await hashSecret(secret);
+    const id=String(body?.id||'');
+    if (!ticketIdValid(id)) fail('预约号码无效');
+    const requestId=String(body?.requestId||'');
+    if (!/^[0-9a-f-]{20,70}$/.test(requestId)) fail('核销请求编号无效');
+    return mutate(token, `redeem ${id}`, data => {
+      const r=data.reservations.find(x=>x.id===id);
+      if (!r || r.credentialHash !== digest) fail('餐票凭据已失效，请联系管理员',403);
+      if (r.redeemStatus==='used' || r.redeemedAt) fail('这张电子餐票已经使用，不允许再次领取',409);
+      const {today,nowTime}=clock(data.settings.timeZone);
+      const eligibility=claimEligibility(r,data.settings,today,nowTime);
+      if (eligibility!=='open') fail('当前餐票不可撕票：'+eligibility,403);
+      const marker=visualMarker();
+      r.redeemStatus='used';r.redeemedAt=new Date().toISOString();
+      r.redeemRequestId=requestId;r.redeemMarker=marker;
+      return {id:r.id, redeemedAt:r.redeemedAt, marker, status:'used', reservation:{id:r.id,plant:r.plant,mealId:r.mealId,mealNameZh:r.mealNameZh,mealNameEn:r.mealNameEn,mealNameEs:r.mealNameEs}};
     });
   }
   if (!p.startsWith('/api/admin/')) fail('接口不存在', 404);
@@ -253,9 +284,42 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
       return { oldCount, imported: employees.length, total: data.employees.length };
     });
   }
+
+  if (p === '/api/admin/tickets/toggle' && method === 'PUT') {
+    if (typeof body?.enabled !== 'boolean') fail('电子领餐开关值无效');
+    return mutate(token,'electronic ticket toggle', data => {
+      data.settings.eTicketEnabled=body.enabled;
+      return {eTicketEnabled:body.enabled};
+    });
+  }
+  if (p === '/api/admin/tickets/reissue' && method === 'POST') {
+    const id=String(body?.id||''), digest=String(body?.credentialHash||'');
+    if (!ticketIdValid(id) || !/^[0-9a-f]{64}$/.test(digest)) fail('重新签发参数无效');
+    return mutate(token,`reissue ${id}`, data => {
+      const r=data.reservations.find(x=>x.id===id);
+      if (!r) fail('预约记录不存在',404);
+      if (r.redeemedAt || r.redeemStatus==='used') fail('已核销餐票不可重新签发');
+      r.credentialHash=digest;r.redeemStatus='pending';r.ticketVersion=(r.ticketVersion||0)+1;
+      r.reissuedAt=new Date().toISOString();
+      return {id:r.id,ticketVersion:r.ticketVersion};
+    });
+  }
+  if (p === '/api/admin/tickets/exception' && method === 'POST') {
+    const id=String(body?.id||''),note=String(body?.note||'').trim();
+    if (!ticketIdValid(id)||note.length<3||note.length>300) fail('请填写 3～300 字的异常说明');
+    return mutate(token,`ticket exception ${id}`,data=>{
+      const r=data.reservations.find(x=>x.id===id);
+      if (!r) fail('预约不存在',404);
+      r.ticketEvents=Array.isArray(r.ticketEvents)?r.ticketEvents:[];
+      r.ticketEvents.push({at:new Date().toISOString(),note});
+      // Never turn a redeemed ticket back into an unredeemed ticket.
+      if (!r.redeemedAt && r.redeemStatus!=='used') r.redeemStatus='exception';
+      return {id:r.id,redeemStatus:r.redeemStatus};
+    });
+  }
   if (p === '/api/admin/settings' && method === 'PUT') {
     const settings = cleanSettings(body);
-    return mutate(token, 'meal settings', data => { data.settings = settings; return { settings }; });
+    return mutate(token, 'meal settings', data => { data.settings = {...settings, eTicketEnabled:!!data.settings.eTicketEnabled}; return { settings:data.settings }; });
   }
   if (p.startsWith('/api/admin/reservations/') && method === 'DELETE') {
     const id = decodeURIComponent(p.split('/').pop()).trim().toUpperCase();

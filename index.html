@@ -44,9 +44,28 @@
       </div>
     </section>
     <section class="section-margin" aria-labelledby="mealsTitle"><div class="panel-head" style="margin-bottom:0"><h2 class="section-title" id="mealsTitle"><span class="step">02</span><span data-i18n="chooseMeal">选择预约餐次</span></h2><span class="hint" data-i18n="mealRule">每位员工每天每个餐次限预约一次</span></div><div id="mealsGrid" class="meal-grid"><div class="panel" style="grid-column:1/-1;color:#748b7b" data-i18n="loadingMeals">正在读取餐次设置…</div></div></section>
-    <section id="myReservations" class="panel lookup-panel" aria-labelledby="lookupTitle"><div class="lookup-head"><h2 id="lookupTitle" data-i18n="lookupTitle">查看我的预约</h2></div><div class="lookup-row"><input id="lookupEmployeeId" type="search" inputmode="numeric" class="control" placeholder="输入完整工号查看预约号码"><button id="lookupBtn" class="action" data-i18n="lookupBtn">查询预约</button></div><div id="lookupStatus" class="status" role="status"></div><div id="reservationList" class="reservation-list" aria-live="polite"></div></section>
+    <section id="myReservations" class="panel lookup-panel" aria-labelledby="lookupTitle">
+      <div class="lookup-head"><h2 id="lookupTitle" data-i18n="ticketMyTitle">我的电子餐票</h2><button id="ticketRefresh" class="action secondary small" type="button" data-i18n="ticketRefresh">刷新餐票状态</button></div>
+      <p class="tiny-note" data-i18n="ticketLocalInfo">仅显示保存在本机浏览器中的餐票。更换手机请联系管理员。</p>
+      <div id="lookupStatus" class="status" role="status" aria-live="polite"></div>
+      <div id="reservationList" class="reservation-list" aria-live="polite"></div>
+    </section>
   </main>
   <div class="modal-backdrop" id="reserveModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true"><div class="modal"><button id="closeModal" class="x" aria-label="关闭">×</button><div class="confirm-icon" id="modalEmoji">🥢</div><h2 id="modalTitle"></h2><p id="modalText" class="modal-desc"></p><div class="modal-detail" id="modalDetail"></div><div id="modalStatus" class="status" aria-live="polite"></div><div class="modal-actions"><button id="cancelBtn" class="action secondary" data-i18n="goBack">返回修改</button><button id="confirmBtn" class="action" data-i18n="confirm">确认预约</button></div></div></div>
+  <div id="ticketOverlay" class="ticket-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ticketOverlayTitle" aria-hidden="true">
+    <div id="ticketScreen" class="ticket-screen">
+      <button type="button" id="ticketClose" class="ticket-overlay-close" aria-label="Close">×</button>
+      <div id="ticketMainIcon" class="ticket-big-icon" aria-hidden="true">🎟️</div>
+      <h2 id="ticketOverlayTitle"></h2>
+      <div id="ticketCode" class="ticket-big-code"></div>
+      <p id="ticketDetails" class="ticket-details"></p>
+      <div id="ticketSlide" class="ticket-slide" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="滑动撕票">
+        <span id="ticketSlideKnob" class="ticket-slide-knob">❯❯</span><span id="ticketSlideHint" class="ticket-slide-hint"></span>
+      </div>
+      <div id="ticketVisual" class="ticket-visual hidden"><div id="ticketSymbol" class="ticket-symbol"></div><div id="ticketSeconds" class="ticket-seconds"></div><div id="ticketCountdown" class="ticket-countdown"></div></div>
+      <p id="ticketOverlayStatus" class="ticket-overlay-status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
   <div id="toast" class="toast" role="status"></div>
   <script src="./config.js"></script><script type="module" src="./staff.js"></script>
 </body></html>

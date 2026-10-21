@@ -147,7 +147,7 @@ async function submitReservation() {
     putLocalTicket(localStorage,{id:r.id,secret:identity.secret,createdAt:r.createdAt});
     $('modalTitle').textContent = tr('successTitle'); $('modalEmoji').textContent = '✅';
     $('modalText').textContent = tr('successDesc');
-    $('modalDetail').innerHTML = `${html(tr('reservationNumber'))}<br><strong style="font-size:30px;letter-spacing:2px">${html(r.id)}</strong><br>${html(r.date)} · ${html(reservationMeal(r,state.settings.meals,lang))} · ${html(r.mealStart)}–${html(r.mealEnd)} · ${html(plantLabel(r.plant))}`;
+    $('modalDetail').innerHTML = `${html(tr('reservationNumber'))}<br><strong style="font-size:30px;letter-spacing:2px">${html(r.id)}</strong><br>${html(tr('name'))}: <strong>${html(r.employeeName || selected?.name || '')}</strong><br>${html(tr('staffNumber'))}: <strong>${html(r.employeeId || selected?.employeeId || '')}</strong><br>${html(r.date)} · ${html(reservationMeal(r,state.settings.meals,lang))} · ${html(r.mealStart)}–${html(r.mealEnd)} · ${html(plantLabel(r.plant))}`;
     $('confirmBtn').textContent = tr('myReservations'); $('confirmBtn').disabled = false;
     $('cancelBtn').textContent = tr('close'); $('cancelBtn').disabled = false;
     $('confirmBtn').onclick = () => { loading = false; closeReserve(); loadMyTickets(); jumpToLookup(); };
@@ -171,7 +171,7 @@ function renderReservationList(rows) {
     const desc=document.createElement('small');desc.textContent=`Plant ${r.plant||'?'} · ${r.mealStart}–${r.mealEnd} · ${tr(availabilityText(info.eligibility))}`;
     left.append(head,person,desc);
     const controls=document.createElement('div');controls.className='ticket-item-actions';
-    const code=document.createElement('div');code.className='code';code.textContent='#'+r.id;
+    const code=document.createElement('div');code.className='code';code.textContent=r.id;
     const btn=document.createElement('button');btn.className='action small';btn.textContent=tr(info.eligibility==='open'?'ticketOpenButton':availabilityText(info.eligibility));
     btn.disabled=info.eligibility!=='open';btn.onclick=()=>openTicket(info);
     controls.append(code,btn);card.append(left,controls);result.append(card);

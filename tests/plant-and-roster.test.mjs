@@ -48,16 +48,16 @@ for(const p of ['D','G','B','H']) {
 }
 ok(validReservationCode(staticCode) && validReservationCode('CEBA40FD604-D') && validReservationCode('CEBA40FD604') && !validReservationCode('261020-X-0001'),'legacy codes supported; invalid plant rejected');
 const todayPrefix=`${date.slice(2,4)}${date.slice(5,7)}${date.slice(8,10)}`;
-const booking=await githubApi('/api/reservations',{method:'POST',body:{employeeId:'8',date,mealId:'lunch',plant:'D'}});
+const booking=await githubApi('/api/reservations',{method:'POST',body:{employeeId:'8',date,mealId:'lunch',plant:'D',credentialHash:'a'.repeat(64)}});
 ok(booking.reservation.plant==='D' && booking.reservation.id===`${todayPrefix}-D-0001`,'book Plant D with first daily sequence');
 ok(db.sequenceCounters[`${date}-D`]===1,'sequence high water persisted to data JSON');
-let failed=false;try{await githubApi('/api/reservations',{method:'POST',body:{employeeId:'8',date,mealId:'lunch',plant:'H'}})}catch(e){failed=/已预约/.test(e.message)}
+let failed=false;try{await githubApi('/api/reservations',{method:'POST',body:{employeeId:'8',date,mealId:'lunch',plant:'H',credentialHash:'b'.repeat(64)}})}catch(e){failed=/已预约/.test(e.message)}
 ok(failed,'switching plant cannot bypass one meal one employee limit');
-const lookup=await githubApi('/api/reservations/my?employeeId=8',{method:'GET'});
-ok(lookup.reservations[0].id===booking.reservation.id,'lookup includes Plant booking');
+let accessDenied=false;try{await githubApi('/api/reservations/my?employeeId=8',{method:'GET'});}catch(e){accessDenied=e.status===403;}
+ok(accessDenied,'unauthenticated employee ID lookup is disabled');
 await githubApi('/api/admin/reservations/'+encodeURIComponent(booking.reservation.id),{method:'DELETE'});
 ok(db.reservations.length===0,'delete suffixed reservation');
-const b2=await githubApi('/api/reservations',{method:'POST',body:{employeeId:'8',date,mealId:'lunch',plant:'G'}});
+const b2=await githubApi('/api/reservations',{method:'POST',body:{employeeId:'8',date,mealId:'lunch',plant:'G',credentialHash:'c'.repeat(64)}});
 ok(b2.reservation.id===`${todayPrefix}-G-0001`,'re-book after delete with another Plant starts independent sequence');
 db.reservations.push({...b2.reservation,id:'CCEBA40FD60'}); // legacy record
 await githubApi('/api/admin/reservations/CCEBA40FD60',{method:'DELETE'});
@@ -67,15 +67,16 @@ const afterDelete=nextReservationCode(db,date,'D');
 ok(afterDelete===`${todayPrefix}-D-0002`,'deleted daily sequence never reused');
 const nextG=nextReservationCode(db,date,'G');
 ok(nextG===`${todayPrefix}-G-0002`,'each Plant uses independent daily counter');
-const nextDay=nextReservationCode(db,'2026-10-21','D');
-ok(nextDay==='261021-D-0001','new day starts at 0001');
+const tomorrow=new Date(new Date(date+'T12:00:00Z').getTime()+86400000).toISOString().slice(0,10);
+const nextDay=nextReservationCode(db,tomorrow,'D');
+ok(nextDay===`${tomorrow.slice(2,4)}${tomorrow.slice(5,7)}${tomorrow.slice(8,10)}-D-0001`,'new day starts at 0001');
 // Another GitHub writer takes B-0001 just before we PUT. Our SHA retry must allocate B-0002.
 conflictHook=()=>{
   db.sequenceCounters[`${date}-B`]=1;
   db.reservations.push({id:`${todayPrefix}-B-0001`, employeeId:'9',employeeName:'external writer',date,plant:'B',mealId:'lunch',mealStart:'00:00',mealEnd:'23:59',createdAt:new Date().toISOString()});
   sha='other-writer-sha';
 };
-const raced=await githubApi('/api/reservations',{method:'POST',body:{employeeId:'10',date,mealId:'lunch',plant:'B'}});
+const raced=await githubApi('/api/reservations',{method:'POST',body:{employeeId:'10',date,mealId:'lunch',plant:'B',credentialHash:'d'.repeat(64)}});
 ok(raced.reservation.id===`${todayPrefix}-B-0002`,'SHA conflict retry reallocates sequential number without collision');
 ok(db.sequenceCounters[`${date}-B`]===2,'SHA retry persists the correct high-water sequence');
 const recovered={reservations:[{id:'261020-H-0008'}]};

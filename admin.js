@@ -173,7 +173,7 @@ function renderBookings() {
     del.className = 'action danger small'; del.textContent = '删除'; del.disabled = busy;
     del.addEventListener('click', () => removeBooking(row)); action.append(del); tr.append(action); tbody.append(tr);
     const card = document.createElement('article'); card.className = 'admin-entry';
-    card.innerHTML = `<div class="item-head"><strong>${html(row.employeeName)} · ${html(displayMeal(row))}</strong><span class="id-cell">#${html(row.id)}</span></div><div class="item-meta">工号 ${html(row.employeeId)}<br>${row.plant ? html('Plant ' + row.plant) + '<br>' : ''}用餐 ${html(row.date)} · ${html(row.mealStart)}–${html(row.mealEnd)}<br>提交于 ${html(formatTime(row.createdAt))}</div>`;
+    card.innerHTML = `<div class="item-head"><strong>${html(row.employeeName)} · ${html(displayMeal(row))}</strong><span class="id-cell">${html(row.id)}</span></div><div class="item-meta">工号 ${html(row.employeeId)}<br>${row.plant ? html('Plant ' + row.plant) + '<br>' : ''}用餐 ${html(row.date)} · ${html(row.mealStart)}–${html(row.mealEnd)}<br>提交于 ${html(formatTime(row.createdAt))}</div>`;
     const d = del.cloneNode(true); d.addEventListener('click', () => removeBooking(row)); card.append(d); mobile.append(card);
   }
 }
@@ -535,8 +535,12 @@ function renderTicketResults() {
   const container=$('ticketAdminResults');container.replaceChildren();
   if (!db) return;
   const q=$('ticketAdminSearch').value.trim().toLowerCase();
-  if (!q) return;
-  const rows=db.reservations.filter(x=>x.id.toLowerCase().includes(q)||String(x.employeeId).includes(q)).slice(0,20);
+  const rows=db.reservations
+    .filter(x=>{
+      if (!q) return true;
+      return [x.id, x.employeeId, x.employeeName, x.plant, x.date, displayMeal(x)].some(s => String(s ?? '').toLowerCase().includes(q));
+    })
+    .sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
   if (!rows.length) {container.textContent='未找到预约';return;}
   for (const r of rows) {
     const card=document.createElement('div');card.className='ticket-admin-entry';

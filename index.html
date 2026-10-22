@@ -63,6 +63,23 @@
         <div class="ticket-employee-row"><span id="ticketEmployeeNameLabel">员工姓名</span><strong id="ticketEmployeeName"></strong></div>
         <div class="ticket-employee-row"><span id="ticketEmployeeIdLabel">员工工号</span><strong id="ticketEmployeeId"></strong></div>
       </div>
+      <!-- V14.5: two real, separately animated ticket pieces, never a success badge. -->
+      <div id="ticketTear" class="ticket-tear hidden" aria-hidden="true">
+        <div id="ticketTearUpper" class="ticket-tear-half ticket-tear-upper">
+          <span class="ticket-tear-glyph" aria-hidden="true">🎟️</span>
+          <span id="ticketTearNumberLabel" class="ticket-tear-caption"></span>
+          <strong id="ticketTearCode" class="ticket-tear-code"></strong>
+          <div class="ticket-tear-person"><span id="ticketTearNameLabel"></span><strong id="ticketTearName"></strong></div>
+          <div class="ticket-tear-person"><span id="ticketTearIdLabel"></span><strong id="ticketTearId"></strong></div>
+          <div class="ticket-tear-perforation" aria-hidden="true"></div>
+        </div>
+        <div id="ticketTearLower" class="ticket-tear-half ticket-tear-lower">
+          <div class="ticket-tear-perforation" aria-hidden="true"></div>
+          <strong id="ticketTearPlant"></strong>
+          <strong id="ticketTearMeal"></strong>
+          <span class="ticket-tear-lower-icon" aria-hidden="true">✦ ✦ ✦</span>
+        </div>
+      </div>
       <div id="ticketSlide" class="ticket-slide" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="滑动撕票">
         <span id="ticketSlideKnob" class="ticket-slide-knob">❯❯</span><span id="ticketSlideHint" class="ticket-slide-hint"></span>
       </div>

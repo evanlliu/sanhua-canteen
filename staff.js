@@ -4,6 +4,7 @@ import { LANGUAGES, translate, detectDeviceLanguage } from './i18n.js';
 import { plantLabel, validPlant } from './plant-schema.js';
 import { newTicketIdentity, ticketListLoad, putLocalTicket, acceptTransferFromFragment } from './ticket-storage.js';
 import { CLAIM_DURATION_MS, visualMarker } from './ticket-schema.js';
+import { beginTicketTear, endTicketTear, awaitTearAndClaim } from './ticket-tear-animation.js';
 const $ = id => document.getElementById(id);
 const employeeInput = $('employeeInput'), dropdown = $('employeeDropdown'), dateInput = $('mealDate');
 let lang = detectDeviceLanguage(navigator.languages?.length ? navigator.languages : [navigator.language]);
@@ -200,6 +201,7 @@ function jumpToLookup(event) {
 function closeTicket() {
   if (ticketBusy) return;
   clearTimeout(successTimer);successTimer=null;
+  endTicketTear();
   $('ticketOverlay').classList.add('hidden');$('ticketOverlay').setAttribute('aria-hidden','true');
   activeTicket=null;
   loadMyTickets().catch(()=>{});
@@ -224,7 +226,8 @@ function randomSlideDirection() {
   const byte=new Uint8Array(1);crypto.getRandomValues(byte);return byte[0]%2?1:-1;
 }
 async function openTicket(info) {
-  if (info.eligibility!=='open') return;
+  if (ticketBusy || info.eligibility!=='open') return;
+  endTicketTear();
   activeTicket=info;slideDirection=randomSlideDirection();swipeProgress=0;
   $('ticketOverlay').classList.remove('hidden');$('ticketOverlay').setAttribute('aria-hidden','false');
   $('ticketScreen').style.background='';$('ticketSlide').classList.remove('hidden');$('ticketVisual').classList.add('hidden');
@@ -242,32 +245,63 @@ function updateSwipe(percent) {
   $('ticketSlideKnob').style.transform=`translateX(${slideDirection*span*swipeProgress/100}px)`;
 }
 function onSwipeEnd() {
-  if (!swipeActive) return;swipeActive=false;
+  if (ticketBusy || !swipeActive) return;swipeActive=false;
   if (swipeProgress>=85) { updateSwipe(100);claimTicket(); }
   else updateSwipe(0);
 }
+// A failed or ambiguous claim can never trigger the success screen. Recheck the
+// server once; if it has already been used, do not replay even if this device
+// does not have the original full claim response.
+async function reconcileFailedClaim(reservation, localSecret) {
+  try {
+    const last=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret}});
+    if (last?.reservation?.redeemStatus==='used' || last?.reservation?.redeemedAt || last?.eligibility==='used') {
+      return tr('ticketUnknownUsed');
+    }
+    if (last?.eligibility==='open' && last?.reservation?.redeemStatus!=='used') {
+      return tr('ticketNotUsedRetry');
+    }
+    if (last?.eligibility && last.eligibility!=='open') {
+      return tr('ticketNotAvailable',{state:tr(availabilityText(last.eligibility))});
+    }
+  } catch { /* Network or ticket identity unknown: never assume success. */ }
+  return tr('ticketUnknown')+' '+tr('ticketContactStaff');
+}
 async function claimTicket() {
   if (!activeTicket || ticketBusy) return;
-  ticketBusy=true;$('ticketSlide').classList.add('hidden');$('ticketClose').classList.add('hidden');
+  ticketBusy=true;swipeActive=false;
+  $('ticketSlide').classList.add('hidden');$('ticketClose').classList.add('hidden');
   $('ticketOverlayStatus').textContent=tr('ticketRedeeming');
+  $('ticketOverlayTitle').textContent=tr('ticketTearing');
   const {reservation,localSecret}=activeTicket;
+  const animation=beginTicketTear(reservation,{
+    meal:reservationMeal(reservation,state?.settings.meals||[],lang),
+    labels:{reservationNumber:tr('reservationNumber'),name:tr('name'),staffNumber:tr('staffNumber')}
+  });
   const bytes=new Uint8Array(20);crypto.getRandomValues(bytes);
   const requestId=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
-  try {
-    // Re-read the up-to-date ticket state before writing.
+  // Begin the existing two-step server claim NOW, in parallel with the paper effect.
+  // Keep request credentials, authentication, and SHA-conflict logic unchanged.
+  const serverClaim=(async()=>{
     const fresh=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret}});
     if (fresh.eligibility!=='open') throw new Error(tr(availabilityText(fresh.eligibility)));
-    const result=await api('/api/tickets/claim',{method:'POST',body:{id:reservation.id,secret:localSecret,requestId}});
+    return api('/api/tickets/claim',{method:'POST',body:{id:reservation.id,secret:localSecret,requestId}});
+  })();
+  try {
+    const result=await awaitTearAndClaim(animation,serverClaim);
+    // Only an explicit, matching, fully confirmed write may show the 8s screen.
+    if (result?.status!=='used' || result?.id!==reservation.id || !result?.redeemedAt) {
+      throw new Error(tr('ticketUnknown'));
+    }
+    endTicketTear();
     showClaimSuccess(result);
   } catch(error) {
-    let reconciled=false;
-    try {
-      const last=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret}});
-      if (last.reservation.redeemStatus==='used') {
-        $('ticketOverlayStatus').textContent=tr('ticketUnknownUsed');reconciled=true;
-      }
-    } catch { /* status unknown */ }
-    if (!reconciled) $('ticketOverlayStatus').textContent=tr('ticketUnknown')+' '+errorText(error);
+    // The paper stays torn while the original server state is rechecked.
+    $('ticketOverlayStatus').textContent=tr('ticketRedeeming');
+    const message=await reconcileFailedClaim(reservation,localSecret);
+    endTicketTear();
+    updateTicketModalText();
+    $('ticketOverlayStatus').textContent=message;
     $('ticketClose').classList.remove('hidden');
   } finally {ticketBusy=false;}
 }
@@ -322,7 +356,7 @@ async function init() {
   slider.addEventListener('pointerdown',e=>{if(!activeTicket||ticketBusy)return;swipeActive=true;swipeStart=e.clientX;slider.setPointerCapture(e.pointerId);});
   slider.addEventListener('pointermove',e=>{if(!swipeActive)return;const dx=(e.clientX-swipeStart)*slideDirection;updateSwipe(dx/Math.max(1,slider.clientWidth-60)*100);});
   slider.addEventListener('pointerup',onSwipeEnd);slider.addEventListener('pointercancel',()=>{swipeActive=false;updateSwipe(0)});
-  slider.addEventListener('keydown',e=>{if(e.key===(slideDirection===1?'ArrowRight':'ArrowLeft')){e.preventDefault();updateSwipe(swipeProgress+25);if(swipeProgress>=85)claimTicket();}});
+  slider.addEventListener('keydown',e=>{if(ticketBusy||!activeTicket)return;if(e.key===(slideDirection===1?'ArrowRight':'ArrowLeft')){e.preventDefault();updateSwipe(swipeProgress+25);if(swipeProgress>=85)claimTicket();}});
   $('closeModal').onclick = closeReserve; $('cancelBtn').onclick = closeReserve;
   $('confirmBtn').onclick = submitReservation;
   $('reserveModal').addEventListener('click', ev => { if (ev.target === $('reserveModal')) closeReserve(); });

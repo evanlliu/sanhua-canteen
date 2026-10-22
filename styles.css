@@ -254,3 +254,9 @@ body.admin-login-mode .login-bg{min-height:100dvh;}
   .ticket-tear.is-separated .ticket-tear-upper {transform:translate(-12px,-12px) rotate(-2deg);}
   .ticket-tear.is-separated .ticket-tear-lower {transform:translate(12px,12px) rotate(2deg);}
 }
+
+/* V14.6 - device binding admin guidance */
+.device-admin-box{margin:20px 0 24px;padding:20px;border:1px solid #dce9df;border-radius:15px;background:#f6faf6}
+.device-admin-box h3{margin-top:0;color:#184e3d}
+.device-admin-box .lookup-row{margin:12px 0}
+@media(max-width:600px){.device-admin-box{padding:14px}.device-admin-box .lookup-row{display:flex;flex-wrap:wrap}.device-admin-box .lookup-row input{min-width:0;flex:1 1 190px}}

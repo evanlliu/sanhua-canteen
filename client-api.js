@@ -3,6 +3,7 @@ import { normalMeal, canBookMeal } from './meal-schema.js';
 import { searchEmployees } from './employee-search.js';
 import { validPlant, nextReservationCode } from './plant-schema.js';
 import { hashSecret, claimEligibility, visualMarker } from './ticket-schema.js';
+import { attachDeviceBooking, checkDeviceBinding, validDeviceHash, normalizedDeviceBindings, deviceTicketAllowed, DEVICE_ERRORS } from './device-binding.js';
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 const KEY = 'evan-canteen-local-demo-v1';
 const initialState = {
@@ -50,11 +51,13 @@ async function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}
   }
   if (p === '/api/reservations/my') bad('V14 不再支持工号查询他人的餐票');
   if (p === '/api/reservations' && method === 'POST') {
-    const { employeeId, date, mealId, plant, credentialHash } = body;
+    const { employeeId, date, mealId, plant, credentialHash, deviceHash } = body;
+    if (!validDeviceHash(deviceHash)) bad(DEVICE_ERRORS.INVALID);
     if (!/^[0-9a-f]{64}$/.test(String(credentialHash||''))) bad('缺少本机餐票凭据');
     if (!validPlant(plant)) bad('请选择 Plant D / G / B / H');
     const e = db.employees.find(x => x.employeeId === employeeId);
     if (!e) bad('工号不在花名册中');
+    checkDeviceBinding(db,employeeId,deviceHash);
     const m = db.settings.meals.find(x => x.id === mealId);
     if (!m?.enabled) bad('此餐次尚未开放');
     const { today, nowTime } = localClock(db.settings.timeZone);
@@ -65,7 +68,8 @@ async function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealId === mealId)) bad('此员工已预约当天该餐次，每餐只能预约一次');
     if (db.reservations.some(x => x.employeeId === employeeId && x.date === date && x.mealStart < m.end && m.start < x.mealEnd)) bad('该员工在重叠的用餐时段已预约，不能重复预约');
     const id = nextReservationCode(db, date, plant);
-    const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date, mealStart: m.start, mealEnd: m.end, mealNameZh: normalMeal(m).nameZh, mealNameEn: normalMeal(m).nameEn, mealNameEs: normalMeal(m).nameEs, createdAt: new Date().toISOString(), credentialHash, redeemStatus:'pending', redeemedAt:null, ticketVersion:1 };
+    attachDeviceBooking(db,employeeId,deviceHash);
+    const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date, mealStart: m.start, mealEnd: m.end, mealNameZh: normalMeal(m).nameZh, mealNameEn: normalMeal(m).nameEn, mealNameEs: normalMeal(m).nameEs, createdAt: new Date().toISOString(), credentialHash, deviceBound:true, redeemStatus:'pending', redeemedAt:null, ticketVersion:1 };
     db.reservations.push(reservation); demoSave(db); return { reservation };
   }
 
@@ -75,18 +79,30 @@ async function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}
     if (!r) bad('本机餐票无效、已重新签发或尚未创建');
     const {credentialHash,...reservation}=r;
     const {today,nowTime}=localClock(db.settings.timeZone);
-    return {reservation,eligibility:claimEligibility(r,db.settings,today,nowTime),eTicketEnabled:!!db.settings.eTicketEnabled,today,nowTime};
+    const eligibility=claimEligibility(r,db.settings,today,nowTime);
+    return {reservation,eligibility:eligibility==='used'||deviceTicketAllowed(db,r,String(body?.deviceHash||''))?eligibility:'device',eTicketEnabled:!!db.settings.eTicketEnabled,today,nowTime};
   }
   if (p === '/api/tickets/claim' && method === 'POST') {
     const digest=await hashSecret(body?.secret);
     const r=db.reservations.find(x=>x.id===body?.id && x.credentialHash===digest);
     if (!r) bad('本机餐票无效');
     if (r.redeemedAt||r.redeemStatus==='used') bad('此餐票已使用');
+    if (!deviceTicketAllowed(db,r,String(body?.deviceHash||''))) bad('此餐票与当前浏览器设备绑定不匹配，请联系管理员');
     const {today,nowTime}=localClock(db.settings.timeZone);
     if (claimEligibility(r,db.settings,today,nowTime)!=='open') bad('当前餐票不允许核销');
     const marker=visualMarker();
     r.redeemStatus='used';r.redeemedAt=new Date().toISOString();r.redeemRequestId=body.requestId;r.redeemMarker=marker;
     demoSave(db);return {id:r.id,redeemedAt:r.redeemedAt,marker,status:'used',reservation:{id:r.id,plant:r.plant,mealId:r.mealId,mealNameZh:r.mealNameZh,mealNameEn:r.mealNameEn,mealNameEs:r.mealNameEs}};
+  }
+  if (p === '/api/devices/activate' && method === 'POST') {
+    const digest=await hashSecret(body?.secret);
+    if (!validDeviceHash(body?.deviceHash)) bad(DEVICE_ERRORS.INVALID);
+    const r=db.reservations.find(x=>x.id===body?.id&&x.credentialHash===digest);
+    const bindings=normalizedDeviceBindings(db);
+    if (!r||!r.deviceTransferPending||r.redeemedAt||r.redeemStatus==='used'||bindings[String(r.employeeId)]!=='pending') bad(DEVICE_ERRORS.TRANSFER);
+    if (Object.entries(bindings).some(([who,hash])=>who!==String(r.employeeId)&&hash===body.deviceHash)) bad(DEVICE_ERRORS.BROWSER);
+    bindings[String(r.employeeId)]=body.deviceHash;r.deviceBound=true;r.deviceTransferPending=false;r.deviceBindingSuspended=false;
+    demoSave(db);return {id:r.id,employeeId:String(r.employeeId)};
   }
   if (p === '/api/admin/dashboard') return { ...db, settings: {...db.settings, maxAdvanceDays: 0, meals: db.settings.meals.map(normalMeal)}, ...localClock(db.settings.timeZone) };
   if (p === '/api/admin/import-roster' && method === 'POST') {
@@ -108,7 +124,31 @@ async function demoApi(path, { method = 'GET', body = null, adminKey = '' } = {}
     if (!r||r.redeemedAt||r.redeemStatus==='used') bad('该餐票不存在或已核销');
     if (!/^[0-9a-f]{64}$/.test(String(body.credentialHash||''))) bad('凭据格式无效');
     r.credentialHash=body.credentialHash;r.redeemStatus='pending';r.ticketVersion=(r.ticketVersion||0)+1;r.reissuedAt=new Date().toISOString();
+    normalizedDeviceBindings(db)[String(r.employeeId)]='pending';
+    if (db.deviceResetTokens) delete db.deviceResetTokens[String(r.employeeId)];
+    for (const other of db.reservations) if (String(other.employeeId)===String(r.employeeId)&&!other.redeemedAt&&other.redeemStatus!=='used') other.deviceBindingSuspended=true;
+    for(const other of db.reservations) if(other!==r&&String(other.employeeId)===String(r.employeeId)) other.deviceTransferPending=false;
+    r.deviceTransferPending=true;r.deviceBindingSuspended=false;
     demoSave(db);return {id:r.id,ticketVersion:r.ticketVersion};
+  }
+  if (p === '/api/devices/activate-reset' && method==='POST') {
+    const employeeId=String(body?.employeeId||''),deviceHash=String(body?.deviceHash||'');
+    if (!/^\d{1,24}$/.test(employeeId)||!validDeviceHash(deviceHash)) bad(DEVICE_ERRORS.INVALID);
+    const digest=await hashSecret(body?.secret);
+    const bindings=normalizedDeviceBindings(db);
+    if (bindings[employeeId]!=='pending'||db.deviceResetTokens?.[employeeId]!==digest) bad(DEVICE_ERRORS.TRANSFER);
+    if (Object.entries(bindings).some(([who,hash])=>who!==employeeId&&hash===deviceHash)) bad(DEVICE_ERRORS.BROWSER);
+    bindings[employeeId]=deviceHash;delete db.deviceResetTokens[employeeId];
+    demoSave(db);return {employeeId,activated:true};
+  }
+  if (p === '/api/admin/devices/reset' && method==='POST') {
+    const employeeId=String(body?.employeeId||'').trim();
+    if (!db.employees.some(e=>String(e.employeeId)===employeeId)) bad('工号不在花名册中');
+    if (!validDeviceHash(body?.resetHash)) bad(DEVICE_ERRORS.INVALID);
+    normalizedDeviceBindings(db)[employeeId]='pending';
+    db.deviceResetTokens??={};db.deviceResetTokens[employeeId]=body.resetHash;
+    for (const r of db.reservations) if (String(r.employeeId)===employeeId&&!r.redeemedAt&&r.redeemStatus!=='used') {r.deviceBindingSuspended=true;r.deviceTransferPending=false;}
+    demoSave(db);return {employeeId,reset:true};
   }
   if (p === '/api/admin/tickets/exception' && method==='POST') {
     const r=db.reservations.find(x=>x.id===body?.id);

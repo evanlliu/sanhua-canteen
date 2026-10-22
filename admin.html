@@ -72,12 +72,19 @@
     <div class="eticket-toggle-row"><label class="checkbox-label"><input id="eTicketEnabled" type="checkbox"> 启用电子领餐模式</label><button id="saveTicketMode" class="action small">保存开关</button></div>
     <div id="eTicketModeStatus" class="status" role="status"></div>
     <div class="eticket-stat-grid"><div><strong id="eTicketPending">0</strong><span>待领餐</span></div><div><strong id="eTicketUsed">0</strong><span>已使用</span></div><div><strong id="eTicketException">0</strong><span>异常待处理</span></div></div>
+    <div class="device-admin-box">
+      <h3>📱 员工设备绑定管理（V14.6）</h3>
+      <p class="lead">一个浏览器只对应一名员工。更换设备请优先使用下方“换设备重新签发”；没有未使用餐票时，可按工号重置绑定，管理员生成一次性绑定链接，新设备先激活再重新预约。</p>
+      <div class="lookup-row"><input id="deviceResetEmployeeId" class="control" type="search" inputmode="numeric" placeholder="输入需重置的完整员工工号" aria-label="需重置设备绑定的员工工号"><button id="deviceResetBtn" class="action secondary" type="button">重置设备绑定</button></div>
+      <div id="deviceResetStatus" class="status" role="status"></div>
+      <p class="tiny-note">重置不会删除或恢复已用餐票；所有未使用的旧票会暂时停用，需管理员重新签发。清除浏览器数据不等于解绑；网页不具备可靠的硬件设备识别能力。</p>
+    </div>
     <h3>餐票查询与异常处理</h3><label class="label" for="ticketAdminSearch">预约编号或员工工号</label>
     <div class="lookup-row"><input id="ticketAdminSearch" class="control" type="search" placeholder="如 261021-B-0001 或 106"><button id="ticketAdminFind" class="action secondary" type="button">查询</button></div>
     <div id="ticketAdminResults" class="ticket-admin-results"></div>
     <div id="ticketAdminStatus" class="status" role="status"></div>
-    <p class="tiny-note">重新签发仅允许未使用的餐票。管理员应核对员工工牌后，通过可信方式将一次性转移链接交给员工。链接持有人可取得该餐票资格，不应公开转发。</p>
-    <div id="ticketTransferBox" class="hidden"><label class="label">新设备领票链接（只显示本次）</label><textarea id="ticketTransferLink" class="control" rows="3" readonly></textarea><button id="ticketTransferCopy" class="action secondary small" type="button">复制链接</button></div>
+    <p class="tiny-note">重新签发会使该员工旧设备绑定进入待激活状态，其他未使用的旧票会暂停核销（如需继续使用须逐张重新签发）。管理员应核对员工工牌后，通过可信方式将一次性转移链接交给员工。链接持有人可取得该餐票资格，不应公开转发。</p>
+    <div id="ticketTransferBox" class="hidden"><label class="label">新设备一次性链接（餐票重新签发／设备绑定重置）</label><textarea id="ticketTransferLink" class="control" rows="3" readonly></textarea><button id="ticketTransferCopy" class="action secondary small" type="button">复制链接</button></div>
   </div></section>
 </main>
 <dialog id="rosterDetailDialog" class="roster-dialog"><div class="table-head"><h2 id="rosterDetailTitle">员工完整资料</h2><button type="button" class="action secondary small" id="closeRosterDetail">关闭</button></div><div id="rosterDetailRows" class="roster-detail-rows"></div></dialog>

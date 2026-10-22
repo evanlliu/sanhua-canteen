@@ -47,7 +47,7 @@ globalThis.fetch=async(raw,opts={})=>{
  }
  throw Error(`Bad method ${method}`);
 };
-const reserve=(id,meal)=>githubApi('/api/reservations',{method:'POST',body:{employeeId:id,mealId:meal,date,plant:'D',credentialHash:'a'.repeat(64)}});
+const reserve=(id,meal)=>githubApi('/api/reservations',{method:'POST',body:{employeeId:id,mealId:meal,date,plant:'D',credentialHash:'a'.repeat(64),deviceHash:({'8':'1','14':'2','008':'3'}[id]||'4').repeat(64)}});
 const reject=(id,meal,reason)=>assert.rejects(reserve(id,meal),reason);
 await test('08:00 上午午餐和晚点心都不应显示为可预约',()=>{
  local('08:00');const meals=db.settings.meals.filter(m=>canBookMeal(m,date,date,'08:00'));
@@ -67,7 +67,7 @@ await test('17:30 点心开放，可以和当天午餐分别预约',async()=>{lo
 await test('19:59 点心仍然开放',()=>{local('19:59');assert.equal(canBookMeal(db.settings.meals[2],date,date,'19:59'),true);});
 await test('20:00 点心结束，不可预约',async()=>{local('20:00');await reject('14','dinner',/已结束/)});
 await test('已禁用早餐不显示，也无法提交',async()=>{local('08:00');assert.equal(canBookMeal(db.settings.meals[0],date,date,'08:00'),false);await reject('8','breakfast',/暂未开放/)});
-await test('不允许用修改过的预约日期绕过今天限制',async()=>{local('11:30');await assert.rejects(githubApi('/api/reservations',{method:'POST',body:{employeeId:'8',mealId:'lunch',date:'2026-01-21',plant:'D',credentialHash:'b'.repeat(64)}}),/仅允许预约当天/)});
+await test('不允许用修改过的预约日期绕过今天限制',async()=>{local('11:30');await assert.rejects(githubApi('/api/reservations',{method:'POST',body:{employeeId:'8',mealId:'lunch',date:'2026-01-21',plant:'D',credentialHash:'b'.repeat(64),deviceHash:'1'.repeat(64)}}),/仅允许预约当天/)});
 await test('GitHub 配置正常且工号公开查询关闭',async()=>{const c=await githubApi('/api/config');assert.equal(c.settings.meals.length,3);await assert.rejects(githubApi('/api/reservations/my?employeeId=8'),/已关闭/);});
 await test('展示字段固定 yyyy-MM-dd HH:mm，保留独立 date 提交字段',()=>{const staff=readFileSync(new URL('../staff.js',import.meta.url),'utf8');const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');assert.match(staff,/`\$\{clock\.today\} \$\{clock\.nowTime\}`/);assert.match(staff,/date: dateInput\.dataset\.date/);assert.match(html,/data-i18n="mealDate">用餐时间（当天）/);assert.match(html,/id="mealDate"[^>]*readonly/);});
 await test('中文/英文/墨西哥西语字段完整',async()=>{const {translate}=await import('../i18n.js');assert.equal(translate('zh','mealDate'),'用餐时间（当天）');assert.equal(translate('en','mealDate'),'Meal time (today)');assert.equal(translate('es','mealDate'),'Horario de comida (hoy)');});
@@ -76,16 +76,16 @@ await test('中文/英文/墨西哥西语字段完整',async()=>{const {translat
 const saved = new Map();globalThis.location={search:'?demo=1',origin:'https://demo.test'};
 globalThis.localStorage={getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v)};
 const {api,localClock}=await import('../client-api.js');
-await test('演示模式上午8点也拒绝提交晚餐',async()=>{local('08:00');const c=await api('/api/config');assert.equal(c.today,date);assert.equal(c.nowTime,'08:00');await assert.rejects(api('/api/reservations',{method:'POST',body:{employeeId:'1000000001',date,mealId:'dinner',plant:'D',credentialHash:'c'.repeat(64)}}),/尚未到/);});
-await test('演示模式在午餐时段可提交午餐',async()=>{local('11:30');const r=await api('/api/reservations',{method:'POST',body:{employeeId:'1000000001',date,mealId:'lunch',plant:'D',credentialHash:'d'.repeat(64)}});assert.equal(r.reservation.mealId,'lunch')});
-await test('演示模式在午餐结束后拒绝再次提交',async()=>{local('14:00');await assert.rejects(api('/api/reservations',{method:'POST',body:{employeeId:'1000000001',date,mealId:'lunch',plant:'D',credentialHash:'d'.repeat(64)}}),/已结束/) });
+await test('演示模式上午8点也拒绝提交晚餐',async()=>{local('08:00');const c=await api('/api/config');assert.equal(c.today,date);assert.equal(c.nowTime,'08:00');await assert.rejects(api('/api/reservations',{method:'POST',body:{employeeId:'1000000001',date,mealId:'dinner',plant:'D',credentialHash:'c'.repeat(64),deviceHash:'4'.repeat(64)}}),/尚未到/);});
+await test('演示模式在午餐时段可提交午餐',async()=>{local('11:30');const r=await api('/api/reservations',{method:'POST',body:{employeeId:'1000000001',date,mealId:'lunch',plant:'D',credentialHash:'d'.repeat(64),deviceHash:'4'.repeat(64)}});assert.equal(r.reservation.mealId,'lunch')});
+await test('演示模式在午餐结束后拒绝再次提交',async()=>{local('14:00');await assert.rejects(api('/api/reservations',{method:'POST',body:{employeeId:'1000000001',date,mealId:'lunch',plant:'D',credentialHash:'d'.repeat(64),deviceHash:'4'.repeat(64)}}),/已结束/) });
 await test('演示模式使用日期 Plant 流水号，删除后不复用',async()=>{
   local('11:31');
   const first=JSON.parse(saved.get('evan-canteen-local-demo-v1')).reservations.find(r=>r.mealId==='lunch');
   const yy=date.slice(2,4)+date.slice(5,7)+date.slice(8,10);
   assert.equal(first.id,`${yy}-D-0001`);
   await api('/api/admin/reservations/'+first.id,{method:'DELETE',adminKey:'demo'});
-  const second=await api('/api/reservations',{method:'POST',body:{employeeId:'1000000001',date,mealId:'lunch',plant:'D',credentialHash:'d'.repeat(64)}});
+  const second=await api('/api/reservations',{method:'POST',body:{employeeId:'1000000001',date,mealId:'lunch',plant:'D',credentialHash:'d'.repeat(64),deviceHash:'4'.repeat(64)}});
   assert.equal(second.reservation.id,`${yy}-D-0002`);
 });
 console.log(`PASS: ${passed} V13 time-window tests`);

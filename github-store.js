@@ -9,6 +9,7 @@ import { normalMeal, mealName, canBookMeal } from './meal-schema.js';
 import { searchEmployees } from './employee-search.js';
 import { validPlant, nextReservationCode, validReservationCode } from './plant-schema.js';
 import { hashSecret, claimEligibility, visualMarker, ticketIdValid } from './ticket-schema.js';
+import { validDeviceHash, attachDeviceBooking, normalizedDeviceBindings, deviceTicketAllowed, checkDeviceBinding, DEVICE_ERRORS } from './device-binding.js';
 const defaultMeals = [
   { id: 'breakfast', label: '早餐', start: '07:00', end: '09:00', enabled: false },
   { id: 'lunch', label: '午餐', start: '11:30', end: '14:00', enabled: true },
@@ -97,6 +98,7 @@ async function read(token) {
   data.employees = Array.isArray(data.employees) ? data.employees : [];
   data.rosterColumns = Array.isArray(data.rosterColumns) ? data.rosterColumns : [];
   data.reservations = Array.isArray(data.reservations) ? data.reservations : [];
+  normalizedDeviceBindings(data);
   return { data, sha: result.sha };
 }
 async function write(token, data, sha, description) {
@@ -208,12 +210,15 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
     const employeeId = String(body?.employeeId || '').trim();
     const date = String(body?.date || ''), mealId = String(body?.mealId || ''), plant = String(body?.plant || '');
     const credentialHash = String(body?.credentialHash || '');
+    const deviceHash = String(body?.deviceHash || '');
+    if (!validDeviceHash(deviceHash)) fail(DEVICE_ERRORS.INVALID, 400);
     if (!/^[0-9a-f]{64}$/.test(credentialHash)) fail('缺少本机领餐凭据，请刷新后再预约');
     if (!validPlant(plant)) fail('请选择 Plant D / G / B / H');
     if (!/^\d{1,24}$/.test(employeeId) || !validDate(date) || !/^[a-z][a-z0-9_-]{0,39}$/.test(mealId)) fail('员工、用餐日期或餐次无效');
     return mutate(token, `reserve ${mealId} ${date}`, data => {
       const e = data.employees.find(e => String(e.employeeId) === employeeId);
       if (!e) fail('工号不在花名册中');
+      checkDeviceBinding(data,employeeId,deviceHash);
       const { today, nowTime } = clock(data.settings.timeZone);
       if (date !== today) fail('仅允许预约当天用餐，请刷新页面后重试');
       const meal = data.settings.meals.find(m => m.id === mealId);
@@ -225,8 +230,9 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
       if (data.reservations.some(r => String(r.employeeId) === employeeId && r.date === date && r.mealStart < meal.end && meal.start < r.mealEnd)) fail('该员工在重叠的用餐时段已预约，不能重复预约', 409);
       // Allocate within mutate's SHA-guarded retry loop, never reusing deleted numbers.
       const id = nextReservationCode(data, date, plant);
+      attachDeviceBooking(data,employeeId,deviceHash);
       const reservation = { id, employeeId, employeeName: e.name, plant, mealId, date,
-        mealStart: meal.start, mealEnd: meal.end, mealNameZh: mealName(meal, 'zh'), mealNameEn: mealName(meal, 'en'), mealNameEs: mealName(meal, 'es'), createdAt: new Date().toISOString(), credentialHash, redeemStatus:'pending', redeemedAt:null, ticketVersion:1 };
+        mealStart: meal.start, mealEnd: meal.end, mealNameZh: mealName(meal, 'zh'), mealNameEn: mealName(meal, 'en'), mealNameEs: mealName(meal, 'es'), createdAt: new Date().toISOString(), credentialHash, deviceBound:true, redeemStatus:'pending', redeemedAt:null, ticketVersion:1 };
       data.reservations.push(reservation);
       return { reservation };
     });
@@ -241,18 +247,22 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
     if (!r) fail('本机餐票无效、已被重新签发或未保存成功', 404);
     const { credentialHash, ...reservation } = r;
     const {today,nowTime}=clock(data.settings.timeZone);
-    return {reservation, eligibility:claimEligibility(r,data.settings,today,nowTime), eTicketEnabled:!!data.settings.eTicketEnabled, nowTime, today};
+    const availability=claimEligibility(r,data.settings,today,nowTime);
+    const eligibility=(availability==='used'||deviceTicketAllowed(data,r,String(body?.deviceHash||'')))?availability:'device';
+    return {reservation, eligibility, eTicketEnabled:!!data.settings.eTicketEnabled, nowTime, today};
   }
   if (p === '/api/tickets/claim' && method === 'POST') {
     const secret=String(body?.secret||''), digest=await hashSecret(secret);
     const id=String(body?.id||'');
     if (!ticketIdValid(id)) fail('预约号码无效');
     const requestId=String(body?.requestId||'');
+    const deviceHash=String(body?.deviceHash||'');
     if (!/^[0-9a-f-]{20,70}$/.test(requestId)) fail('核销请求编号无效');
     return mutate(token, `redeem ${id}`, data => {
       const r=data.reservations.find(x=>x.id===id);
       if (!r || r.credentialHash !== digest) fail('餐票凭据已失效，请联系管理员',403);
       if (r.redeemStatus==='used' || r.redeemedAt) fail('这张电子餐票已经使用，不允许再次领取',409);
+      if (!deviceTicketAllowed(data,r,deviceHash)) fail('此餐票与当前浏览器设备绑定不匹配，请联系管理员',403);
       const {today,nowTime}=clock(data.settings.timeZone);
       const eligibility=claimEligibility(r,data.settings,today,nowTime);
       if (eligibility!=='open') fail('当前餐票不可撕票：'+eligibility,403);
@@ -260,6 +270,35 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
       r.redeemStatus='used';r.redeemedAt=new Date().toISOString();
       r.redeemRequestId=requestId;r.redeemMarker=marker;
       return {id:r.id, redeemedAt:r.redeemedAt, marker, status:'used', reservation:{id:r.id,plant:r.plant,mealId:r.mealId,mealNameZh:r.mealNameZh,mealNameEn:r.mealNameEn,mealNameEs:r.mealNameEs}};
+    });
+  }
+  // Reissued bearer ticket is the only way to activate a new browser binding.
+  if (p === '/api/devices/activate' && method === 'POST') {
+    const secret=String(body?.secret||''), digest=await hashSecret(secret);
+    const id=String(body?.id||''),deviceHash=String(body?.deviceHash||'');
+    if (!ticketIdValid(id)||!validDeviceHash(deviceHash)) fail(DEVICE_ERRORS.INVALID,400);
+    return mutate(token,`activate browser ${id}`,data=>{
+      const r=data.reservations.find(x=>x.id===id&&x.credentialHash===digest);
+      if (!r||!r.deviceTransferPending||r.redeemedAt||r.redeemStatus==='used') fail(DEVICE_ERRORS.TRANSFER,403);
+      const bindings=normalizedDeviceBindings(data);
+      if (bindings[String(r.employeeId)]!=='pending') fail(DEVICE_ERRORS.TRANSFER,403);
+      if (Object.entries(bindings).some(([employee,hash])=>employee!==String(r.employeeId)&&hash===deviceHash)) fail(DEVICE_ERRORS.BROWSER,409);
+      bindings[String(r.employeeId)]=deviceHash;
+      r.deviceBound=true;r.deviceTransferPending=false;r.deviceBindingSuspended=false;
+      return {id:r.id,employeeId:String(r.employeeId)};
+    });
+  }
+  if (p === '/api/devices/activate-reset' && method === 'POST') {
+    const employeeId=String(body?.employeeId||''),secret=String(body?.secret||''),deviceHash=String(body?.deviceHash||'');
+    if (!/^\d{1,24}$/.test(employeeId)||!validDeviceHash(deviceHash)) fail(DEVICE_ERRORS.INVALID,400);
+    const digest=await hashSecret(secret);
+    return mutate(token,`activate reset ${employeeId}`,data=>{
+      const bindings=normalizedDeviceBindings(data);
+      if (bindings[employeeId]!=='pending'||!data.deviceResetTokens||data.deviceResetTokens[employeeId]!==digest) fail(DEVICE_ERRORS.TRANSFER,403);
+      if (Object.entries(bindings).some(([who,hash])=>who!==employeeId&&hash===deviceHash)) fail(DEVICE_ERRORS.BROWSER,409);
+      bindings[employeeId]=deviceHash;
+      delete data.deviceResetTokens[employeeId];
+      return {employeeId,activated:true};
     });
   }
   if (!p.startsWith('/api/admin/')) fail('接口不存在', 404);
@@ -301,7 +340,29 @@ export async function githubApi(path, { method = 'GET', body = null, adminKey = 
       if (r.redeemedAt || r.redeemStatus==='used') fail('已核销餐票不可重新签发');
       r.credentialHash=digest;r.redeemStatus='pending';r.ticketVersion=(r.ticketVersion||0)+1;
       r.reissuedAt=new Date().toISOString();
+      // Pause ALL outstanding tickets until the new browser activates the link.
+      normalizedDeviceBindings(data)[String(r.employeeId)]='pending';
+      if (data.deviceResetTokens) delete data.deviceResetTokens[String(r.employeeId)];
+      for(const other of data.reservations) if(String(other.employeeId)===String(r.employeeId)&&!other.redeemedAt&&other.redeemStatus!=='used') other.deviceBindingSuspended=true;
+      for(const other of data.reservations) if(other!==r&&String(other.employeeId)===String(r.employeeId)) other.deviceTransferPending=false;
+      r.deviceTransferPending=true;r.deviceBindingSuspended=false;
       return {id:r.id,ticketVersion:r.ticketVersion};
+    });
+  }
+  if (p === '/api/admin/devices/reset' && method === 'POST') {
+    const employeeId=String(body?.employeeId||'').trim();
+    const resetHash=String(body?.resetHash||'');
+    if (!/^\d{1,24}$/.test(employeeId)||!validDeviceHash(resetHash)) fail('工号或重置凭据无效',400);
+    return mutate(token,`reset browser ${employeeId}`,data=>{
+      if (!data.employees.some(e=>String(e.employeeId)===employeeId)) fail('工号不在花名册中',404);
+      normalizedDeviceBindings(data)[employeeId]='pending';
+      if (!data.deviceResetTokens||typeof data.deviceResetTokens!=='object'||Array.isArray(data.deviceResetTokens)) data.deviceResetTokens={};
+      data.deviceResetTokens[employeeId]=resetHash;
+      // Existing used records remain untouched; pending tickets require reissue.
+      for(const r of data.reservations) if(String(r.employeeId)===employeeId&&!r.redeemedAt&&r.redeemStatus!=='used') {
+        r.deviceBindingSuspended=true;r.deviceTransferPending=false;
+      }
+      return {employeeId,reset:true};
     });
   }
   if (p === '/api/admin/tickets/exception' && method === 'POST') {

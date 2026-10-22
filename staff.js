@@ -2,18 +2,30 @@ import { api, isDemo, html, localClock } from './client-api.js';
 import { normalMeal, mealName, mealIcon, reservationMeal, canBookMeal, mealAvailability } from './meal-schema.js';
 import { LANGUAGES, translate, detectDeviceLanguage } from './i18n.js';
 import { plantLabel, validPlant } from './plant-schema.js';
-import { newTicketIdentity, ticketListLoad, putLocalTicket, acceptTransferFromFragment } from './ticket-storage.js';
+import { newTicketIdentity, ticketListLoad, putLocalTicket, acceptTransferFromFragment, acceptDeviceResetFromFragment } from './ticket-storage.js';
 import { CLAIM_DURATION_MS, visualMarker } from './ticket-schema.js';
 import { beginTicketTear, endTicketTear, awaitTearAndClaim } from './ticket-tear-animation.js';
+import { loadBrowserBinding, hashBrowserId, pinBrowserEmployee, localEmployeeCheck, DEVICE_ERRORS } from './device-binding.js';
 const $ = id => document.getElementById(id);
 const employeeInput = $('employeeInput'), dropdown = $('employeeDropdown'), dateInput = $('mealDate');
 let lang = detectDeviceLanguage(navigator.languages?.length ? navigator.languages : [navigator.language]);
 const tr = (key,args) => translate(lang,key,args);
 let state = null, selected = null, options = [], choice = -1, pending = null, requestSeq = 0, debounceTimer = null, loading = false;
 let lastReservations = null;
+let browserHash='',deviceIssue='', verifiedOwners=[];
+const browserBinding=()=>loadBrowserBinding(localStorage,isDemo);
+function bindingError(code) {
+  if (code===DEVICE_ERRORS.BROWSER) return tr('deviceBoundOther');
+  if (code===DEVICE_ERRORS.EMPLOYEE) return tr('employeeBoundOther');
+  if (code===DEVICE_ERRORS.TRANSFER) return tr('deviceTransferRejected');
+  if (code===DEVICE_ERRORS.MIXED) return tr('deviceMixedHistory');
+  if (code===DEVICE_ERRORS.INVALID) return tr('deviceUnavailable');
+  return '';
+}
 let ownedTickets = [], activeTicket = null, ticketBusy = false, slideDirection = 1, swipeActive = false, swipeStart = 0, swipeProgress = 0, successTimer = null;
 function errorText(error) {
   const raw = String(error?.message || '');
+  if (bindingError(raw)) return bindingError(raw);
   if (/重复预约|已预约|不能重复|重叠/.test(raw)) return tr('errDuplicate');
   if (/仅允许预约当天|预约日期不在允许范围|不在允许预约的日期/.test(raw)) return tr('errDay');
   if (/尚未到该餐次的预约时间|当前不在该餐次的预约时段/.test(raw)) return tr('errNotStarted');
@@ -46,6 +58,7 @@ function applyLanguage() {
   renderMeals();
   if (lastReservations) renderReservationList(lastReservations);
   if (activeTicket && !ticketBusy) updateTicketModalText();
+  if (deviceIssue) alertArea(bindingError(deviceIssue));
 }
 function closeDropdown() { dropdown.classList.add('hidden'); employeeInput.setAttribute('aria-expanded', 'false'); choice = -1; }
 function renderDropdown() {
@@ -116,6 +129,8 @@ function renderMeals() {
 }
 function openReserve(mealId) {
   if (!selected) { toast(tr('chooseEmployee')); employeeInput.focus(); return; }
+  const blocked=localEmployeeCheck(browserBinding(),selected.employeeId,verifiedOwners,!!deviceIssue);
+  if (blocked) { alertArea(bindingError(deviceIssue||blocked));return; }
   if (!dateInput.dataset.date) { toast(tr('dateInvalid')); return; }
   const plant = $('plantSelect').value;
   if (!validPlant(plant)) { toast(tr('choosePlant')); $('plantSelect').focus(); return; }
@@ -140,11 +155,16 @@ async function submitReservation() {
   loading = true; $('confirmBtn').disabled = true; $('cancelBtn').disabled = true;
   $('confirmBtn').textContent = tr('submitting'); renderMeals();
   try {
+    // Re-check all locally held tickets before a new booking (legacy browsers may contain two people).
+    await loadMyTickets();
+    const blocked=localEmployeeCheck(browserBinding(),pending.employeeId,verifiedOwners,!!deviceIssue);
+    if (blocked) throw new Error(deviceIssue||blocked);
     const identity = await newTicketIdentity();
     // Save a pending claim before the network request, so ambiguous network errors can be reconciled.
     putLocalTicket(localStorage,{secret:identity.secret,pending:true,createdAt:new Date().toISOString()});
-    const result = await api('/api/reservations', { method: 'POST', body: {...pending,credentialHash:identity.credentialHash} });
+    const result = await api('/api/reservations', { method: 'POST', body: {...pending,credentialHash:identity.credentialHash,deviceHash:browserHash} });
     const r = result.reservation;
+    pinBrowserEmployee(localStorage,r.employeeId,isDemo);
     putLocalTicket(localStorage,{id:r.id,secret:identity.secret,createdAt:r.createdAt});
     $('modalTitle').textContent = tr('successTitle'); $('modalEmoji').textContent = '✅';
     $('modalText').textContent = tr('successDesc');
@@ -158,7 +178,7 @@ async function submitReservation() {
   finally { loading = false; if ($('confirmBtn').textContent === tr('submitting')) $('confirmBtn').textContent = tr('retry'); $('cancelBtn').disabled = false; renderMeals(); }
 }
 function availabilityText(code) {
-  return ({ open:'ticketOpen', used:'ticketUsed', early:'ticketEarly', late:'ticketLate', disabled:'ticketDisabled', day:'ticketDay', exception:'ticketException', missing:'ticketInvalid' })[code] || 'ticketInvalid';
+  return ({ open:'ticketOpen', used:'ticketUsed', early:'ticketEarly', late:'ticketLate', disabled:'ticketDisabled', day:'ticketDay', exception:'ticketException', missing:'ticketInvalid', device:'ticketDevice' })[code] || 'ticketInvalid';
 }
 function renderReservationList(rows) {
   const result=$('reservationList');result.replaceChildren();
@@ -173,25 +193,35 @@ function renderReservationList(rows) {
     left.append(head,person,desc);
     const controls=document.createElement('div');controls.className='ticket-item-actions';
     const code=document.createElement('div');code.className='code';code.textContent=r.id;
-    const btn=document.createElement('button');btn.className='action small';btn.textContent=tr(info.eligibility==='open'?'ticketOpenButton':availabilityText(info.eligibility));
-    btn.disabled=info.eligibility!=='open';btn.onclick=()=>openTicket(info);
+    const blocked=!!deviceIssue;
+    const btn=document.createElement('button');btn.className='action small';btn.textContent=tr(blocked?'deviceContactAdmin':info.eligibility==='open'?'ticketOpenButton':availabilityText(info.eligibility));
+    btn.disabled=blocked||info.eligibility!=='open';btn.onclick=()=>openTicket(info);
     controls.append(code,btn);card.append(left,controls);result.append(card);
   }
 }
 async function loadMyTickets() {
   const status=$('lookupStatus');status.textContent=tr('ticketLoading');
   const saved=ticketListLoad(localStorage);
-  if (!saved.length) {ownedTickets=[];lastReservations=[];renderReservationList([]);return;}
+  if (!saved.length) {ownedTickets=[];lastReservations=[];verifiedOwners=[];deviceIssue='';renderReservationList([]);return;}
   const results=await Promise.allSettled(saved.map(async item=>{
-    const response=await api('/api/tickets/status',{method:'POST',body:{id:item.id||'',secret:item.secret}});
+    const response=await api('/api/tickets/status',{method:'POST',body:{id:item.id||'',secret:item.secret,deviceHash:browserHash}});
     if (!item.id && response.reservation.id) putLocalTicket(localStorage,{id:response.reservation.id,secret:item.secret,createdAt:item.createdAt});
     return {...response,localSecret:item.secret};
   }));
   ownedTickets=results.filter(x=>x.status==='fulfilled').map(x=>x.value);
+  verifiedOwners=[...new Set(ownedTickets.map(x=>String(x.reservation.employeeId)))];
+  const failures=results.filter(x=>x.status==='rejected');
+  // A 404 means the bearer ticket was revoked/reissued. Other failures may hide a second worker.
+  const unknown=failures.some(x=>x.reason?.status!==404 && !/已重新签发|未保存成功|尚未创建|已被重新签发/.test(String(x.reason?.message||'')));
+  deviceIssue=localEmployeeCheck(browserBinding(),verifiedOwners[0]||browserBinding().employeeId||'',verifiedOwners,unknown);
+  if (!deviceIssue && verifiedOwners.length===1) {
+    try {pinBrowserEmployee(localStorage,verifiedOwners[0],isDemo);} catch {deviceIssue=DEVICE_ERRORS.BROWSER;}
+  }
   lastReservations=ownedTickets;
   renderReservationList(ownedTickets);
-  const failures=results.filter(x=>x.status==='rejected');
   if (failures.length) status.textContent += ' · '+tr('ticketUnverified',{count:failures.length});
+  if (deviceIssue) {status.textContent+=' · '+bindingError(deviceIssue);alertArea(bindingError(deviceIssue));}
+
 }
 function jumpToLookup(event) {
   event?.preventDefault();
@@ -226,7 +256,7 @@ function randomSlideDirection() {
   const byte=new Uint8Array(1);crypto.getRandomValues(byte);return byte[0]%2?1:-1;
 }
 async function openTicket(info) {
-  if (ticketBusy || info.eligibility!=='open') return;
+  if (ticketBusy || deviceIssue || info.eligibility!=='open') return;
   endTicketTear();
   activeTicket=info;slideDirection=randomSlideDirection();swipeProgress=0;
   $('ticketOverlay').classList.remove('hidden');$('ticketOverlay').setAttribute('aria-hidden','false');
@@ -254,7 +284,7 @@ function onSwipeEnd() {
 // does not have the original full claim response.
 async function reconcileFailedClaim(reservation, localSecret) {
   try {
-    const last=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret}});
+    const last=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret,deviceHash:browserHash}});
     if (last?.reservation?.redeemStatus==='used' || last?.reservation?.redeemedAt || last?.eligibility==='used') {
       return tr('ticketUnknownUsed');
     }
@@ -283,9 +313,9 @@ async function claimTicket() {
   // Begin the existing two-step server claim NOW, in parallel with the paper effect.
   // Keep request credentials, authentication, and SHA-conflict logic unchanged.
   const serverClaim=(async()=>{
-    const fresh=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret}});
+    const fresh=await api('/api/tickets/status',{method:'POST',body:{id:reservation.id,secret:localSecret,deviceHash:browserHash}});
     if (fresh.eligibility!=='open') throw new Error(tr(availabilityText(fresh.eligibility)));
-    return api('/api/tickets/claim',{method:'POST',body:{id:reservation.id,secret:localSecret,requestId}});
+    return api('/api/tickets/claim',{method:'POST',body:{id:reservation.id,secret:localSecret,requestId,deviceHash:browserHash}});
   })();
   try {
     const result=await awaitTearAndClaim(animation,serverClaim);
@@ -362,8 +392,30 @@ async function init() {
   $('reserveModal').addEventListener('click', ev => { if (ev.target === $('reserveModal')) closeReserve(); });
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeReserve(); });
   applyLanguage();
-  await acceptTransferFromFragment(localStorage);
-  loadMyTickets().catch(()=>{});
+  try {browserHash=await hashBrowserId(browserBinding().id);}
+  catch(error) {alertArea(tr('deviceUnavailable')+' '+errorText(error));return;}
+  // The new device receives the bearer link only after server-side reissue proof
+  // has activated its own browser binding. A link never bypasses a local mismatch.
+  try {
+    await acceptDeviceResetFromFragment(async({employeeId,secret})=>{
+      await loadMyTickets();
+      const blocked=localEmployeeCheck(browserBinding(),employeeId,verifiedOwners,!!deviceIssue);
+      if (blocked) throw new Error(deviceIssue||blocked);
+      await api('/api/devices/activate-reset',{method:'POST',body:{employeeId,secret,deviceHash:browserHash}});
+      pinBrowserEmployee(localStorage,employeeId,isDemo);
+      toast(tr('deviceEnrollmentDone'));
+    });
+    await acceptTransferFromFragment(localStorage,async({id,secret})=>{
+      await loadMyTickets();
+      const response=await api('/api/tickets/status',{method:'POST',body:{id,secret,deviceHash:browserHash}});
+      const employeeId=String(response.reservation.employeeId);
+      const blocked=localEmployeeCheck(browserBinding(),employeeId,verifiedOwners,!!deviceIssue);
+      if (blocked) throw new Error(deviceIssue||blocked);
+      await api('/api/devices/activate',{method:'POST',body:{id,secret,deviceHash:browserHash}});
+      pinBrowserEmployee(localStorage,employeeId,isDemo);
+    });
+  } catch(error) {alertArea(errorText(error)+' '+tr('deviceContactAdmin'));}
+  loadMyTickets().catch(error=>{deviceIssue=DEVICE_ERRORS.MIXED;alertArea(errorText(error));});
   employeeInput.focus();
   try {
     state = await api('/api/config');

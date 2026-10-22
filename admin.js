@@ -1,7 +1,7 @@
 import { api, isDemo, html, mealTitle, formatTime } from './client-api.js';
 import { readXlsxRows } from './xlsx-reader.js';
 import { normalMeal, mealName, mealIcon, reservationMeal } from './meal-schema.js';
-import { newTicketIdentity, transferLink } from './ticket-storage.js';
+import { newTicketIdentity, transferLink, resetDeviceLink } from './ticket-storage.js';
 const $ = id => document.getElementById(id);
 let adminKey = '', db = null, rosterFileRows = null, rosterFileColumns = null, busy = false;
 let filtered = [];
@@ -545,7 +545,9 @@ function renderTicketResults() {
   for (const r of rows) {
     const card=document.createElement('div');card.className='ticket-admin-entry';
     const detail=document.createElement('div');detail.className='ticket-admin-description';
-    detail.textContent=`${r.id} · ${r.employeeName} (${r.employeeId}) · Plant ${r.plant||'?'} · ${displayMeal(r)} · ${ticketStatus(r)}${r.redeemedAt?' · '+formatTime(r.redeemedAt):''}`;
+    const bound=db.deviceBindings?.[String(r.employeeId)];
+    const boundText=bound==='pending'?'待新设备激活':bound?'已绑定浏览器':'历史记录/未绑定';
+    detail.textContent=`${r.id} · ${r.employeeName} (${r.employeeId}) · Plant ${r.plant||'?'} · ${displayMeal(r)} · ${ticketStatus(r)} · ${boundText}${r.redeemedAt?' · '+formatTime(r.redeemedAt):''}`;
     card.append(detail);
     const tools=document.createElement('div');tools.className='ticket-admin-actions';
     const reissue=document.createElement('button');reissue.type='button';reissue.className='action secondary small';reissue.textContent='换设备重新签发';
@@ -576,9 +578,26 @@ async function reissueTicket(row) {
     await authApi('/api/admin/tickets/reissue',{method:'POST',body:{id:row.id,credentialHash:identity.credentialHash}});
     const link=transferLink(row.id,identity.secret);
     $('ticketTransferLink').value=link;$('ticketTransferBox').classList.remove('hidden');
-    await refresh();message('ticketAdminStatus',`已重新签发 ${row.id}。请当面交付一次性转移链接，旧浏览器立即失效。`);
+    await refresh();message('ticketAdminStatus',`已重新签发 ${row.id}。请当面将链接交付新设备；员工必须在新浏览器打开并激活。该员工其他未使用餐票需重新签发。`);
   } catch(e){onError(e,'ticketAdminStatus');}
   finally{busy=false;renderTicketResults();}
+}
+async function resetDeviceBinding() {
+  if (busy) return;
+  const employeeId=$('deviceResetEmployeeId').value.trim();
+  if (!/^\d{1,24}$/.test(employeeId)) {message('deviceResetStatus','请输入完整的数字员工工号',true);return;}
+  const employee=db?.employees?.find(e=>String(e.employeeId)===employeeId);
+  if (!employee) {message('deviceResetStatus','工号不在花名册中',true);return;}
+  if (!confirm(`请确认已核实员工工牌和换设备原因。\n\n${employee.name}（${employeeId}）\n\n重置绑定会暂停该员工所有未使用的旧餐票，必须重新签发才能在新设备使用。已使用记录不变。确定继续？`)) return;
+  busy=true;$('deviceResetBtn').disabled=true;
+  try {
+    const identity=await newTicketIdentity();
+    await authApi('/api/admin/devices/reset',{method:'POST',body:{employeeId,resetHash:identity.credentialHash}});
+    $('ticketTransferLink').value=resetDeviceLink(employeeId,identity.secret);
+    $('ticketTransferBox').classList.remove('hidden');
+    await refresh();message('deviceResetStatus',`已重置 ${employee.name}（${employeeId}）的浏览器绑定。请当面交付下方一次性新设备激活链接；旧未使用餐票须重新签发。`);
+  } catch(error) {onError(error,'deviceResetStatus');}
+  finally {busy=false;$('deviceResetBtn').disabled=false;}
 }
 async function recordTicketException(row) {
   const note=prompt(`为 ${row.id} 记录异常原因（不会重置已使用状态）：`);
@@ -612,6 +631,7 @@ function init() {
   $('addMealBtn').onclick = addMeal;
   $('saveTicketMode').onclick=saveTicketMode;
   $('ticketAdminFind').onclick=renderTicketResults;
+  $('deviceResetBtn').onclick=resetDeviceBinding;
   $('ticketAdminSearch').onkeydown=e=>{if(e.key==='Enter')renderTicketResults();};
   $('ticketTransferCopy').onclick=()=>navigator.clipboard.writeText($('ticketTransferLink').value).then(()=>message('ticketAdminStatus','链接已复制')).catch(()=>message('ticketAdminStatus','复制失败，请手动选择链接',true));
   restoreLogin();

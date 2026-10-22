@@ -28,7 +28,6 @@
   </nav>
   <main class="shell main compact-main">
     <div id="demoHint" class="notice hidden" data-i18n="demoNotice">🧪 演示模式：数据仅保存在当前浏览器，不会写入正式系统。</div>
-    <div id="globalStatus" class="notice hidden" role="status" aria-live="polite"></div>
     <section class="panel" aria-labelledby="employeeTitle">
       <div class="panel-head"><h2 class="section-title" id="employeeTitle"><span class="step">01</span><span data-i18n="employeeSection">确认员工信息</span></h2></div>
       <div class="fields">
@@ -88,6 +87,6 @@
       <p id="ticketOverlayStatus" class="ticket-overlay-status" role="status" aria-live="polite"></p>
     </div>
   </div>
-  <div id="toast" class="toast" role="status"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"><span id="toastText" class="toast-text"></span><button id="toastDismiss" type="button" class="toast-dismiss" aria-label="关闭">×</button></div>
   <script src="./config.js"></script><script type="module" src="./staff.js"></script>
 </body></html>

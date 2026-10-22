@@ -68,7 +68,16 @@ async def main():
     await page.locator('#selectedEmployee button').click()
     await choose(page,'14')
     await page.locator('[data-meal="lunch"]').click()
-    assert '已绑定其他员工' in await page.locator('#globalStatus').inner_text()
+    assert '已绑定其他员工' in await page.locator('#toastText').inner_text()
+    assert 'show' in (await page.locator('#toast').get_attribute('class'))
+    assert await page.locator('#toast').get_attribute('role') == 'alert'
+    bounds=await page.locator('#toast').bounding_box()
+    assert bounds and abs(bounds['y']+bounds['height']/2-844/2)<4, bounds
+    await page.locator('#toastDismiss').click()
+    assert not await page.locator('#toast').is_visible()
+    await page.locator('[data-meal="lunch"]').click()
+    assert await page.locator('#toast').is_visible()
+    print('PASS red error tip appears in current viewport center and is dismissible')
     assert len(json.loads(await page.evaluate("window.__store.get('evan-canteen-local-demo-v1')"))['reservations'])==1
     print('PASS same browser prevents booking another employee')
     assert not errors,errors
@@ -80,14 +89,14 @@ async def main():
       tickets.append({'id':id,'secret':ch*64})
     ctx,page,errors=await render(b,mixed,tickets)
     await page.wait_for_function("document.querySelectorAll('.ticket-item').length===2",timeout=10000)
-    await page.wait_for_function("document.querySelector('#globalStatus').textContent.includes('多名员工')",timeout=10000)
+    await page.wait_for_function("document.querySelector('#toastText').textContent.includes('多名员工')",timeout=10000)
     assert await page.locator('.ticket-item button:disabled').count()==2
     await choose(page,'8')
     await page.locator('[data-meal="lunch"]').click()
-    assert '多名员工' in await page.locator('#globalStatus').inner_text()
+    assert '多名员工' in await page.locator('#toastText').inner_text()
     print('PASS migrated mixed-person browser disables new booking and redemption')
     await page.locator('#languageSelect').select_option('es')
-    assert 'distintos empleados' in await page.locator('#globalStatus').inner_text()
+    assert 'distintos empleados' in await page.locator('#toastText').inner_text()
     print('PASS mobile warning is available in Spanish')
     assert not errors,errors
     await ctx.close();await b.close()

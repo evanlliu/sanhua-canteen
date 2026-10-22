@@ -35,12 +35,23 @@ function errorText(error) {
   if (/不在花名册/.test(raw)) return tr('errUnknown');
   return raw || tr('error');
 }
-function alertArea(text, error = true) {
-  const n = $('globalStatus'); n.textContent = text; n.classList.remove('hidden'); n.classList.toggle('error', error);
+// Errors appear in the *current viewport*, not in an off-screen banner at the top.
+function alertArea(text, error = true) { toast(text, error); }
+function dismissToast() {
+  clearTimeout(toast.timer);
+  $('toast').classList.remove('show');
 }
-function toast(message) {
-  const n = $('toast'); n.textContent = message; n.classList.add('show');
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => n.classList.remove('show'), 3500);
+function toast(message, error = false) {
+  const n = $('toast');
+  if (!message) return;
+  $('toastText').textContent = message;
+  n.classList.toggle('error', Boolean(error));
+  n.setAttribute('role', error ? 'alert' : 'status');
+  n.setAttribute('aria-live', error ? 'assertive' : 'polite');
+  $('toastDismiss').setAttribute('aria-label', tr('close'));
+  n.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(dismissToast, error ? 6500 : 3500);
 }
 function applyLanguage() {
   document.documentElement.lang = lang === 'es' ? 'es-MX' : lang === 'en' ? 'en' : 'zh-CN';
@@ -128,17 +139,17 @@ function renderMeals() {
   grid.querySelectorAll('[data-meal]:not(:disabled)').forEach(btn => btn.addEventListener('click', () => openReserve(btn.dataset.meal)));
 }
 function openReserve(mealId) {
-  if (!selected) { toast(tr('chooseEmployee')); employeeInput.focus(); return; }
+  if (!selected) { toast(tr('chooseEmployee'),true); employeeInput.focus(); return; }
   const blocked=localEmployeeCheck(browserBinding(),selected.employeeId,verifiedOwners,!!deviceIssue);
   if (blocked) { alertArea(bindingError(deviceIssue||blocked));return; }
-  if (!dateInput.dataset.date) { toast(tr('dateInvalid')); return; }
+  if (!dateInput.dataset.date) { toast(tr('dateInvalid'),true); return; }
   const plant = $('plantSelect').value;
-  if (!validPlant(plant)) { toast(tr('choosePlant')); $('plantSelect').focus(); return; }
+  if (!validPlant(plant)) { toast(tr('choosePlant'),true); $('plantSelect').focus(); return; }
   const meal = state?.settings.meals.find(m => m.id === mealId);
   const { today, nowTime } = localClock(state.settings.timeZone);
   if (!meal?.enabled) return;
   if (!canBookMeal(meal, today, dateInput.dataset.date, nowTime)) {
-    toast(nowTime < meal.start ? tr('errNotStarted') : nowTime >= meal.end ? tr('errEnded') : tr('errDay'));
+    toast(nowTime < meal.start ? tr('errNotStarted') : nowTime >= meal.end ? tr('errEnded') : tr('errDay'),true);
     renderMeals();
     return;
   }
@@ -174,7 +185,7 @@ async function submitReservation() {
     $('confirmBtn').onclick = () => { loading = false; closeReserve(); loadMyTickets(); jumpToLookup(); };
     loadMyTickets();
     toast(tr('savedToast',{code:r.id}));
-  } catch (error) { $('modalStatus').textContent = errorText(error); $('modalStatus').classList.add('error'); $('confirmBtn').disabled = false; }
+  } catch (error) { $('modalStatus').textContent = ''; toast(errorText(error),true); $('confirmBtn').disabled = false; }
   finally { loading = false; if ($('confirmBtn').textContent === tr('submitting')) $('confirmBtn').textContent = tr('retry'); $('cancelBtn').disabled = false; renderMeals(); }
 }
 function availabilityText(code) {
@@ -226,7 +237,7 @@ async function loadMyTickets() {
 function jumpToLookup(event) {
   event?.preventDefault();
   $('myReservations').scrollIntoView({behavior:'smooth',block:'center'});
-  loadMyTickets().catch(error=>{$('lookupStatus').textContent=errorText(error);});
+  loadMyTickets().catch(error=>{$('lookupStatus').textContent=errorText(error);alertArea(errorText(error));});
 }
 function closeTicket() {
   if (ticketBusy) return;
@@ -371,6 +382,7 @@ async function init() {
     applyLanguage();
   });
   $('jumpToLookup').addEventListener('click',jumpToLookup);
+  $('toastDismiss').addEventListener('click',dismissToast);
   employeeInput.addEventListener('input', scheduleSearch);
   employeeInput.addEventListener('keydown', ev => {
     if (ev.key === 'Escape') closeDropdown();
